@@ -39,15 +39,3 @@ func main() {
 	})
 	wg.Wait()
 }
-
-// could have a while loop to receive terminal instructions commanding go routines
-// ie telling runner(s) to shutdown and cancel orders cleanly
-// strategies should have tests for suitability across a period
-// strategies might need a fitting function to fit internals
-// update trader execute - for simulated trading
-// file struct and asset struct, asset and market and label etc?
-// decide on signal processing - unarity or external functions can be applied like smoothing
-// alpaca adpator and finish trader execute functinos
-// do flush csv methods
-// Actually code momentum
-// save runners in json so they can be reloaded
