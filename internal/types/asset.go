@@ -1,9 +1,9 @@
 package types
 
 type Asset struct {
-    Symbol string
-    Market string
-    Type   string
+    Symbol string `json:"symbol"`
+    Market string `json:"market"`
+    Type   string `json:"type"`
 }
 
 func (a Asset) String() string {

@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	ds "github.com/joshskilla/trading-bot/internal/datastore"
@@ -9,19 +11,19 @@ import (
 )
 
 type Portfolio struct {
-	name             string
-	Cash             float64
-	Positions         map[t.Asset]float64
-	ExecutionHistory []ExecutionRecord
-	OrderWriter      ds.Writer
-	PositionWriter   ds.Writer
+	Name             string              `json:"name"`
+	Cash             float64             `json:"cash"`
+	Positions        map[t.Asset]float64 `json:"positions"`
+	ExecutionHistory []ExecutionRecord   `json:"-"`
+	OrderWriter      ds.Writer           `json:"-"`
+	PositionWriter   ds.Writer           `json:"-"`
 }
 
 type PositionRecord struct {
-	Time   time.Time
-	Asset  t.Asset
-	Qty    float64
-	Price  float64
+	Time  time.Time
+	Asset t.Asset
+	Qty   float64
+	Price float64
 }
 
 type ExecutionRecord struct {
@@ -37,9 +39,9 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 	filePath := "results"
 	fileType := "csv"
 	return &Portfolio{
-		name:             name,
+		Name:             name,
 		Cash:             cash,
-		Positions:         make(map[t.Asset]float64),
+		Positions:        make(map[t.Asset]float64),
 		ExecutionHistory: []ExecutionRecord{},
 		OrderWriter: ds.NewCSVWriter(ds.File{
 			Name: fmt.Sprintf("%s_orders", name),
@@ -54,11 +56,32 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 	}
 }
 
-func (p *Portfolio) Name() string {
-	return p.name
+// Marshal portfolio to JSON and write to data/portfolios/<name>.json
+func (p *Portfolio) SaveToJSON() error {
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := fmt.Sprintf("data/portfolios/%s.json", p.Name)
+	return os.WriteFile(path, data, 0644)
 }
 
-func (p *Portfolio) FlushOrdersToFile(append bool) error {
+// Load portfolio from data/portfolios/<name>.json
+func LoadPortfolioFromJSON(name string) (*Portfolio, error) {
+	path := fmt.Sprintf("data/portfolios/%s.json", name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var p Portfolio
+	err = json.Unmarshal(data, &p)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (p *Portfolio) FlushOrdersToFile() error {
 	// Write p.ExecutionHistory to CSV at path
 	// Handle append/overwrite
 	// Format: Time,Asset,Action,Qty,Price
@@ -66,7 +89,7 @@ func (p *Portfolio) FlushOrdersToFile(append bool) error {
 	return nil
 }
 
-func (p *Portfolio) FlushPositionsToFile(append bool) error {
+func (p *Portfolio) FlushPositionsToFile() error {
 	// Write p.Positions to CSV at path
 	// Handle append/overwrite
 	// Format: Time,Asset,Qty,Price
