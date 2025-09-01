@@ -28,8 +28,8 @@ func (tt *TestTrader) Execute(p *Portfolio, sig t.Signal) (ExecutionRecord, bool
 	cost := qty * price
 	if sig.Action == t.Buy && p.Cash >= cost {
 		p.Cash -= cost
-		p.Holdings[asset] += qty
-		exec := ExecutionRecord{time.Now(), asset, t.Buy, qty, price}
+		p.Positions[asset] += qty
+		exec := ExecutionRecord{time.Now(), asset, t.Buy, qty, price, p.Cash}
 		return exec, true
 	}
 	return ExecutionRecord{}, false

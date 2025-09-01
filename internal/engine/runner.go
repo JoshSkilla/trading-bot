@@ -35,7 +35,7 @@ func (r *Runner) Run(ctx ctx.Context) {
 		   // (Cancel live orders TODO)
 		   // Stop the runner
 		   if len(r.Portfolio.ExecutionHistory) > 0 {
-			   r.Portfolio.FlushToCSV(true)
+			   r.Portfolio.FlushOrdersToFile(true)
 		   }
 		   fmt.Printf("Shut down strategy %s on portfolio %s...\n", r.Strategy.Name(), r.Portfolio.Name())
 		   return
@@ -53,7 +53,7 @@ func (r *Runner) Run(ctx ctx.Context) {
 				   continue
 			   }
 			   if len(r.Portfolio.ExecutionHistory) >= MaxExecutionHistory {
-				   r.Portfolio.FlushToCSV(true)
+				   r.Portfolio.FlushOrdersToFile(true)
 			   }
 			   r.Portfolio.ExecutionHistory = append(r.Portfolio.ExecutionHistory, execRecord)
 		   }

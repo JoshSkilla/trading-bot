@@ -5,6 +5,9 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"time"
+
+	t "github.com/joshskilla/trading-bot/internal/types"
 )
 
 type File struct {
@@ -75,6 +78,17 @@ func extractFields(obj any) []string {
 			row = append(row, strconv.FormatFloat(field.Float(), 'f', 2, 64))
 		case reflect.Int, reflect.Int64:
 			row = append(row, strconv.FormatInt(field.Int(), 10))
+		case reflect.Struct:
+			// Handle Asset and time.Time
+			if field.Type().Name() == "Asset" {
+				asset := field.Interface().(t.Asset)
+				row = append(row, asset.Symbol)
+			} else if field.Type().PkgPath() == "time" && field.Type().Name() == "Time" {
+				tm := field.Interface().(time.Time)
+				row = append(row, tm.Format(time.RFC3339))
+			} else {
+				row = append(row, "")
+			}
 		default:
 			row = append(row, "")
 		}

@@ -11,9 +11,17 @@ import (
 type Portfolio struct {
 	name             string
 	Cash             float64
-	Holdings         map[t.Asset]float64
+	Positions         map[t.Asset]float64
 	ExecutionHistory []ExecutionRecord
-	Writer           ds.Writer
+	OrderWriter      ds.Writer
+	PositionWriter   ds.Writer
+}
+
+type PositionRecord struct {
+	Time   time.Time
+	Asset  t.Asset
+	Qty    float64
+	Price  float64
 }
 
 type ExecutionRecord struct {
@@ -22,22 +30,27 @@ type ExecutionRecord struct {
 	Action t.Action
 	Qty    float64
 	Price  float64
+	Cash   float64
 }
 
 func NewPortfolio(name string, cash float64) *Portfolio {
-	fileName := fmt.Sprintf("%s_log", name)
 	filePath := "results"
 	fileType := "csv"
 	return &Portfolio{
 		name:             name,
 		Cash:             cash,
-		Holdings:         make(map[t.Asset]float64),
+		Positions:         make(map[t.Asset]float64),
 		ExecutionHistory: []ExecutionRecord{},
-		Writer: ds.NewCSVWriter(ds.File{
-			Name: fileName,
+		OrderWriter: ds.NewCSVWriter(ds.File{
+			Name: fmt.Sprintf("%s_orders", name),
 			Path: filePath,
 			Type: fileType,
-		}, []string{"Time", "Asset", "Action", "Qty", "Price", "PortfolioValue", "Cash"}),
+		}, []string{"Time", "Asset", "Action", "Qty", "Price", "Cash"}),
+		PositionWriter: ds.NewCSVWriter(ds.File{
+			Name: fmt.Sprintf("%s_positions", name),
+			Path: filePath,
+			Type: fileType,
+		}, []string{"Time", "Asset", "Qty", "Price"}),
 	}
 }
 
@@ -45,10 +58,17 @@ func (p *Portfolio) Name() string {
 	return p.name
 }
 
-func (p *Portfolio) FlushToCSV(append bool) error {
+func (p *Portfolio) FlushOrdersToFile(append bool) error {
 	// Write p.ExecutionHistory to CSV at path
 	// Handle append/overwrite
 	// Format: Time,Asset,Action,Qty,Price
 	// maybe hold a file interface which has a flush method instead of this
+	return nil
+}
+
+func (p *Portfolio) FlushPositionsToFile(append bool) error {
+	// Write p.Positions to CSV at path
+	// Handle append/overwrite
+	// Format: Time,Asset,Qty,Price
 	return nil
 }
