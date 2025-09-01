@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bufio"
+	ctx "context"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -10,6 +14,7 @@ import (
 )
 
 func main() {
+	// Create runners & portfolios
 	cash := 100000.0
 	name := "test"
 	asset := t.NewAsset("AAPL", "NASDAQ", "stock")
@@ -19,23 +24,57 @@ func main() {
 	ticks := make(chan t.Tick, 10)
 	runner := engine.NewRunner(portfolio, trader, strat, ticks)
 
+	// Setup
+	var wg sync.WaitGroup
+	ctx, cancel := ctx.WithCancel(ctx.Background())
+	cmdChan := make(chan string)
 	isTest := true
 	tickInterval := time.Hour
 	runLength := 100
 
-	var wg sync.WaitGroup
+	var tickGen t.TickGenerator
+	if isTest {
+		tickGen = t.GenerateTestTicks
+	} else {
+		tickGen = t.GenerateLiveTicks
+	}
 
+	// Generate ticks for runner(s)
 	go func() {
 		defer close(ticks)
-		if isTest {
-			t.GenerateTestTicks(ticks, runLength, tickInterval)
-		} else {
-			t.GenerateLiveTicks(ticks, runLength, tickInterval)
-		}
+		tickGen(ctx, ticks, runLength, tickInterval)
 	}()
 
+	// Run runner(s)
 	wg.Go(func() {
-		runner.Run()
+		runner.Run(ctx)
 	})
-	wg.Wait()
+
+	// Command line input goroutine
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			cmd := scanner.Text()
+			cmdChan <- cmd
+		}
+		// Handle scanner.Err()?
+	}()
+
+	// Main loop: handle live commands
+	for {
+		select {
+		case cmd := <-cmdChan:
+			if cmd == "--shutdown" {
+				cancel() // Signal runners to stop
+				fmt.Println("Shutting down trading-bot...")
+				return
+			}
+			// Other commands...
+
+		case <-ctx.Done():
+			// Wait on runners to gracefully shut down
+			wg.Wait()
+			return
+		}
+	}
 }

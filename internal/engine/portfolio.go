@@ -9,7 +9,7 @@ import (
 )
 
 type Portfolio struct {
-	Name             string
+	name             string
 	Cash             float64
 	Holdings         map[t.Asset]float64
 	ExecutionHistory []ExecutionRecord
@@ -29,7 +29,7 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 	filePath := "results"
 	fileType := "csv"
 	return &Portfolio{
-		Name:             name,
+		name:             name,
 		Cash:             cash,
 		Holdings:         make(map[t.Asset]float64),
 		ExecutionHistory: []ExecutionRecord{},
@@ -39,6 +39,10 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 			Type: fileType,
 		}, []string{"Time", "Asset", "Action", "Qty", "Price", "PortfolioValue", "Cash"}),
 	}
+}
+
+func (p *Portfolio) Name() string {
+	return p.name
 }
 
 func (p *Portfolio) FlushToCSV(append bool) error {
