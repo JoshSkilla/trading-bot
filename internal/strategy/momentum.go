@@ -4,6 +4,7 @@ import (
 	"time"
 
 	t "github.com/joshskilla/trading-bot/internal/types"
+	"fmt"
 )
 
 type MomentumStrategy struct {
@@ -15,6 +16,27 @@ type MomentumStrategy struct {
 
 func NewMomentumStrategy(asset t.Asset) *MomentumStrategy {
 	return &MomentumStrategy{asset: asset, bar: t.Bar{}, fastMA: 0, slowMA: 0}
+}
+
+func RestoreMomentumStrategy(checkpoint *Checkpoint) (*MomentumStrategy, error) {
+	asset, ok := checkpoint.Attributes["Asset"].(t.Asset)
+	if !ok {
+		return nil, fmt.Errorf("missing asset in checkpoint")
+	}
+	fastMA, ok := checkpoint.Attributes["FastMA"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("missing fastMA in checkpoint")
+	}
+	slowMA, ok := checkpoint.Attributes["SlowMA"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("missing slowMA in checkpoint")
+	}
+	return &MomentumStrategy{
+		asset:  asset,
+		bar:    t.Bar{},
+		fastMA: fastMA,
+		slowMA: slowMA,
+	}, nil
 }
 
 func (m *MomentumStrategy) Init() error {
