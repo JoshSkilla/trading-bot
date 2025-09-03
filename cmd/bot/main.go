@@ -13,6 +13,7 @@ func main() {
 			CreateCmd(), 
 			DeleteCmd(),
 			RunCmd(),
+			BacktestCmd(),
 		},
 	}
 
