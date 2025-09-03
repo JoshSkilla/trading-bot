@@ -90,16 +90,28 @@ func LoadPortfolioFromJSON(name string) (*Portfolio, error) {
 }
 
 func (p *Portfolio) FlushOrdersToFile() error {
-	// Write p.ExecutionHistory to CSV at path
-	// Handle append/overwrite
-	// Format: Time,Asset,Action,Qty,Price
-	// maybe hold a file interface which has a flush method instead of this
+	for _, record := range p.ExecutionHistory {
+		if err := p.OrderWriter.Write(record); err != nil {
+			return err
+		}
+	}
+	p.ExecutionHistory = []ExecutionRecord{}
 	return nil
 }
 
 func (p *Portfolio) FlushPositionsToFile() error {
-	// Write p.Positions to CSV at path
-	// Handle append/overwrite
-	// Format: Time,Asset,Qty,Price
+	now := time.Now()
+	for asset, qty := range p.Positions {
+		price := 0.0 // TODO: send requests for price
+		record := PositionRecord{
+			Time:  now,
+			Asset: asset,
+			Qty:   qty,
+			Price: price,
+		}
+		if err := p.PositionWriter.Write(record); err != nil {
+			return err
+		}
+	}
 	return nil
 }
