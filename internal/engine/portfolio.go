@@ -10,6 +10,16 @@ import (
 	t "github.com/joshskilla/trading-bot/internal/types"
 )
 
+const (
+	PortfolioFilePath       = "data/portfolios/%s.json"
+	ResultsFileDir          = "results"
+	ResultsFileType         = "csv"
+	OrdersFileName          = "%s_orders"
+	PositionsFileName       = "%s_positions"
+	OrdersFilePath          = "results/%s_orders.csv"
+	PositionsFilePath       = "results/%s_positions.csv"
+)
+
 type Portfolio struct {
 	Name             string              `json:"name"`
 	Cash             float64             `json:"cash"`
@@ -36,22 +46,20 @@ type ExecutionRecord struct {
 }
 
 func NewPortfolio(name string, cash float64) *Portfolio {
-	filePath := "results"
-	fileType := "csv"
 	return &Portfolio{
 		Name:             name,
 		Cash:             cash,
 		Positions:        make(map[t.Asset]float64),
 		ExecutionHistory: []ExecutionRecord{},
 		OrderWriter: ds.NewCSVWriter(ds.File{
-			Name: fmt.Sprintf("%s_orders", name),
-			Path: filePath,
-			Type: fileType,
+			Name: fmt.Sprintf(OrdersFileName, name),
+			Path: ResultsFileDir,
+			Type: ResultsFileType,
 		}, []string{"Time", "Asset", "Action", "Qty", "Price", "Cash"}),
 		PositionWriter: ds.NewCSVWriter(ds.File{
-			Name: fmt.Sprintf("%s_positions", name),
-			Path: filePath,
-			Type: fileType,
+			Name: fmt.Sprintf(PositionsFileName, name),
+			Path: ResultsFileDir,
+			Type: ResultsFileType,
 		}, []string{"Time", "Asset", "Qty", "Price"}),
 	}
 }
@@ -62,13 +70,13 @@ func (p *Portfolio) SaveToJSON() error {
 	if err != nil {
 		return err
 	}
-	path := fmt.Sprintf("data/portfolios/%s.json", p.Name)
+	path := fmt.Sprintf(PortfolioFilePath, p.Name)
 	return os.WriteFile(path, data, 0644)
 }
 
 // Load portfolio from data/portfolios/<name>.json
 func LoadPortfolioFromJSON(name string) (*Portfolio, error) {
-	path := fmt.Sprintf("data/portfolios/%s.json", name)
+	path := fmt.Sprintf(PortfolioFilePath, name)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

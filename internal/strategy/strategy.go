@@ -4,8 +4,8 @@ import (
 	t "github.com/joshskilla/trading-bot/internal/types"
 
 	"fmt"
+	"time"
 )
-
 
 // Strategy interface is implemented by any trading strategy
 type Strategy interface {
@@ -13,6 +13,7 @@ type Strategy interface {
 	OnTick(tick t.Tick) // Update internal state
 	GenerateSignals() []t.Signal
 	Name() string
+	TickInterval() time.Duration
 }
 
 func RestoreFromCheckpoint(strategyType string, checkpoint *Checkpoint) (Strategy, error) {

@@ -14,16 +14,17 @@ import (
 
 // Runs the trading session
 // Coordinates the runners, tick generators, trader, and live command inputs
-func Run(portfolio *Portfolio, strat st.Strategy, trader *TestTrader, isTest bool) error {
+func Run(portfolio *Portfolio, strat st.Strategy, trader *TestTrader, isTest bool, start time.Time, end time.Time) error {
 
 	ticks := make(chan t.Tick, 10)
+	tickInterval := strat.TickInterval()
 	runner := NewRunner(portfolio, trader, strat, ticks)
 
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 	cmdChan := make(chan string)
-	tickInterval := time.Hour
-	runLength := 100
+
+	runLength := int(end.Sub(start).Seconds() / tickInterval.Seconds())
 
 	var tickGen t.TickGenerator
 	if isTest {

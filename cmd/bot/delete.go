@@ -5,6 +5,9 @@ import (
   "fmt"
   "github.com/urfave/cli/v3"
   "os"
+
+  e "github.com/joshskilla/trading-bot/internal/engine"
+  st "github.com/joshskilla/trading-bot/internal/strategy"
 )
 
 // Delete resources (e.g., portfolios, checkpoints)
@@ -26,18 +29,17 @@ func DeleteCmd() *cli.Command {
 			},
 			Action: func(ctx context.Context, c *cli.Command) error {
 				name := c.String("name")
-				path := fmt.Sprintf("data/portfolios/%s.json", name)
-				
-				err := os.Remove(path)
+
+				err := os.Remove(fmt.Sprintf(e.PortfolioFilePath, name))
 				if err != nil && !os.IsNotExist(err) {
 					return err
 				}
 
-				err = os.Remove(fmt.Sprintf("results/%s_orders.csv", name))
+				err = os.Remove(fmt.Sprintf(e.OrdersFilePath, name))
 				if err != nil && !os.IsNotExist(err) {
 					return err
 				}
-				err = os.Remove(fmt.Sprintf("results/%s_positions.csv", name))
+				err = os.Remove(fmt.Sprintf(e.PositionsFilePath, name))
 				if err != nil && !os.IsNotExist(err) {
 					return err
 				}
@@ -59,7 +61,7 @@ func DeleteCmd() *cli.Command {
 			Action: func(ctx context.Context, c *cli.Command) error {
 				id := c.String("id")
 
-				err := os.Remove(fmt.Sprintf("data/checkpoints/%s.json", id))
+				err := os.Remove(fmt.Sprintf(st.CheckpointFilePath, id))
 				if err != nil && !os.IsNotExist(err) {
 					return err
 				}

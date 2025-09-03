@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/joshskilla/trading-bot/internal/engine"
 	st "github.com/joshskilla/trading-bot/internal/strategy"
@@ -51,7 +52,14 @@ func RunCmd() *cli.Command {
 			trader := engine.NewTestTrader() // replace with live trader once functional
 
 			// Run the trading session
-			return engine.Run(portfolio, strat, trader, false)
+			usLoc, err := time.LoadLocation(engine.ExchangeTimeZone)
+			if err != nil {
+				return fmt.Errorf("failed to load timezone: %w", err)
+			}
+			now := time.Now()
+			start := now
+			end := time.Date(now.Year(), now.Month(), now.Day(), engine.ClosingTime, 0, 0, 0, usLoc).In(now.Location())
+			return engine.Run(portfolio, strat, trader, false, start, end)
 		},
 	}
 }

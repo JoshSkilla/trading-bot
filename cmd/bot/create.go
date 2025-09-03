@@ -1,11 +1,14 @@
 package main
 
 import (
-  "context"
-  "fmt"
-  "github.com/urfave/cli/v3"
-  "github.com/joshskilla/trading-bot/internal/engine"
-  st "github.com/joshskilla/trading-bot/internal/strategy"
+	"context"
+	"fmt"
+	"github.com/urfave/cli/v3"
+	"strconv"
+
+	t "github.com/joshskilla/trading-bot/internal/types"
+	"github.com/joshskilla/trading-bot/internal/engine"
+	st "github.com/joshskilla/trading-bot/internal/strategy"
 )
 
 // Create resources (e.g., portfolios, checkpoints)
@@ -44,7 +47,7 @@ func CreateCmd() *cli.Command {
 			Action: func(ctx context.Context, c *cli.Command) error {
 				id := c.String("id")
 
-				cp, err := st.ParseArgsForCheckpoint(id, c.Args().Slice())
+				cp, err := ParseArgsForCheckpoint(id, c.Args().Slice())
 				if err != nil {
 					return fmt.Errorf("failed to create checkpoint: %w", err)
 				}
@@ -55,4 +58,34 @@ func CreateCmd() *cli.Command {
 		},
 	},
   }
+}
+
+// Limited functionality should not be relied upon, numbers only to float64
+func ParseArgsForCheckpoint(id string, args []string) (*st.Checkpoint, error) {
+	kv, err := st.ParseKV(args)
+	if err != nil {
+		return nil, err
+	}
+	attributes := make(map[string]any)
+	for k, v := range kv {
+		if k == "asset" {
+			// Restricted to one assetType and exchange for now
+			attributes[k] = t.Asset{
+				Symbol:   v,
+				Type:     engine.AssetType,
+				Exchange: engine.Exchange,
+			}
+		}
+		// Convert numeric strings to float64
+		if len(v) > 0 && (v[0] >= '0' && v[0] <= '9') {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				attributes[k] = f
+			}
+		}
+	}
+	cp := &st.Checkpoint{
+		ID:         id,
+		Attributes: attributes,
+	}
+	return cp, nil
 }

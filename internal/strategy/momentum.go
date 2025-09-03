@@ -43,6 +43,10 @@ func (m *MomentumStrategy) Init() error {
 	return nil
 }
 
+func (m *MomentumStrategy) TickInterval() time.Duration {
+	return time.Minute
+}
+
 func (m *MomentumStrategy) OnTick(tick t.Tick) {
 	// get updated asset information (bar)
 	// update fast & slow MA
