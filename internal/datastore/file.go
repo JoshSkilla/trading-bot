@@ -2,23 +2,25 @@ package datastore
 
 import (
 	"encoding/csv"
+	"fmt"
 	"os"
 	"reflect"
 	"strconv"
 	"time"
+	"path/filepath"
 
 	t "github.com/joshskilla/trading-bot/internal/types"
 )
 
 type File struct {
 	Name string
-	Path string
+	Dir  string
 	Type string
 }
 
 type Writer interface {
 	Write(data any) error
-	FullPath() string
+	Path() string
 }
 
 type CSVWriter struct {
@@ -31,17 +33,17 @@ func NewCSVWriter(file File, headers []string) *CSVWriter {
 	return &CSVWriter{File: file, Headers: headers}
 }
 
-func (w *CSVWriter) FullPath() string {
-	return w.File.Path + "/" + w.File.Name + "." + w.File.Type
+func (w *CSVWriter) Path() string {
+	return w.File.Dir + "/" + w.File.Name + "." + w.File.Type
 }
 
 func (w *CSVWriter) Write(data any) error {
 	v := reflect.ValueOf(data)
 	if v.Kind() != reflect.Slice {
-		return nil
+		return fmt.Errorf("csvwriter: expected slice, got %T", data)
 	}
 
-	f, err := os.OpenFile(w.FullPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(AbsolutePath(w.Path()), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
@@ -106,4 +108,10 @@ func FileExists(path string) bool {
 	}
 	// Some other error (e.g. permission issue)
 	return false
+}
+
+func AbsolutePath(projectPath string) string{
+	basePath := os.Getenv("BOT_PATH")
+	path := filepath.Join(basePath, projectPath)
+	return path
 }

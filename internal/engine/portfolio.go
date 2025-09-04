@@ -4,22 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"time"
 	"path/filepath"
+	"time"
 
+	_ "github.com/joshskilla/trading-bot/config"
 	ds "github.com/joshskilla/trading-bot/internal/datastore"
 	t "github.com/joshskilla/trading-bot/internal/types"
-	_ "github.com/joshskilla/trading-bot/config"
 )
 
 const (
-	PortfolioFilePath       = "data/portfolios/%s.json"
-	ResultsFileDir          = "results"
-	ResultsFileType         = "csv"
-	OrdersFileName          = "%s_orders"
-	PositionsFileName       = "%s_positions"
-	OrdersFilePath          = "results/%s_orders.csv"
-	PositionsFilePath       = "results/%s_positions.csv"
+	PortfolioFilePath = "data/portfolios/%s.json"
+	ResultsFileDir    = "results"
+	ResultsFileType   = "csv"
+	OrdersFileName    = "%s_orders"
+	PositionsFileName = "%s_positions"
+	OrdersFilePath    = "results/%s_orders.csv"
+	PositionsFilePath = "results/%s_positions.csv"
 )
 
 type Portfolio struct {
@@ -29,6 +29,11 @@ type Portfolio struct {
 	ExecutionHistory []ExecutionRecord   `json:"-"`
 	OrderWriter      ds.Writer           `json:"-"`
 	PositionWriter   ds.Writer           `json:"-"`
+}
+type portfolioJSON struct {
+	Name     string             `json:"name"`
+	Cash     float64            `json:"cash"`
+	Positions map[string]float64 `json:"positions"`
 }
 
 type PositionRecord struct {
@@ -55,12 +60,12 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 		ExecutionHistory: []ExecutionRecord{},
 		OrderWriter: ds.NewCSVWriter(ds.File{
 			Name: fmt.Sprintf(OrdersFileName, name),
-			Path: ResultsFileDir,
+			Dir:  ResultsFileDir,
 			Type: ResultsFileType,
 		}, []string{"Time", "Asset", "Action", "Qty", "Price", "Cash"}),
 		PositionWriter: ds.NewCSVWriter(ds.File{
 			Name: fmt.Sprintf(PositionsFileName, name),
-			Path: ResultsFileDir,
+			Dir:  ResultsFileDir,
 			Type: ResultsFileType,
 		}, []string{"Time", "Asset", "Qty", "Price"}),
 	}
@@ -68,19 +73,14 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 
 // Marshal portfolio to JSON and write to data/portfolios/<name>.json
 func (p *Portfolio) SaveToJSON() error {
-    type out struct {
-        Name     string             `json:"name"`
-        Cash     float64            `json:"cash"`
-        Holdings map[string]float64 `json:"holdings"`
-    }
 	ho := make(map[string]float64, len(p.Positions))
-    for a, v := range p.Positions {
-        ho[a.String()] = v // define Asset.String() to return a stable key (e.g., "NASDAQ:AAPL")
-    }
-	data, err := json.MarshalIndent(out{
+	for a, v := range p.Positions {
+		ho[a.String()] = v // define Asset.String() to return a stable key (e.g., "NASDAQ:AAPL")
+	}
+	data, err := json.MarshalIndent(portfolioJSON{
 		Name:     p.Name,
 		Cash:     p.Cash,
-		Holdings: ho,
+		Positions: ho,
 	}, "", "  ")
 	if err != nil {
 		return err
@@ -92,24 +92,28 @@ func (p *Portfolio) SaveToJSON() error {
 
 // Load portfolio from data/portfolios/<name>.json
 func LoadPortfolioFromJSON(name string) (*Portfolio, error) {
-	path := fmt.Sprintf(PortfolioFilePath, name)
+	basePath := os.Getenv("BOT_PATH")
+	path := filepath.Join(basePath, fmt.Sprintf(PortfolioFilePath, name))
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	var pJ portfolioJSON
 	var p Portfolio
-	err = json.Unmarshal(data, &p)
+	err = json.Unmarshal(data, &pJ)
 	if err != nil {
 		return nil, err
+	}
+	p = *NewPortfolio(pJ.Name, pJ.Cash)
+	for k, v := range pJ.Positions {
+		p.Positions[t.AssetFromString(k)] = v
 	}
 	return &p, nil
 }
 
 func (p *Portfolio) FlushOrdersToFile() error {
-	for _, record := range p.ExecutionHistory {
-		if err := p.OrderWriter.Write(record); err != nil {
-			return err
-		}
+	if err := p.OrderWriter.Write(p.ExecutionHistory); err != nil {
+		return err
 	}
 	p.ExecutionHistory = []ExecutionRecord{}
 	return nil
@@ -125,7 +129,8 @@ func (p *Portfolio) FlushPositionsToFile() error {
 			Qty:   qty,
 			Price: price,
 		}
-		if err := p.PositionWriter.Write(record); err != nil {
+		slice := []PositionRecord{record}
+		if err := p.PositionWriter.Write(slice); err != nil {
 			return err
 		}
 	}
