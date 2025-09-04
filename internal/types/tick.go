@@ -2,6 +2,7 @@ package types
 
 import (
 	ctx "context"
+	"fmt"
 	"time"
 )
 
@@ -10,8 +11,7 @@ type Tick struct {
 	// Metadata map[string]interface{} // Optional market related information: bear/bull?
 }
 
-type TickGenerator func(ctx ctx.Context, ticks chan Tick, runLength int, tickInterval time.Duration)
-
+type TickGenerator func(ctx ctx.Context, ticks chan Tick, start time.Time, end time.Time, tickInterval time.Duration, tradingHours TradingHours)
 
 func NewTick(t time.Time) Tick {
 	return Tick{Time: t}
@@ -19,31 +19,101 @@ func NewTick(t time.Time) Tick {
 
 // Ticks channel closed outside the following functions:
 
-func GenerateTestTicks(ctx ctx.Context, ticks chan Tick, runLength int, tickInterval time.Duration) {
-	for i := range runLength {
+func GenerateTestTicks(ctx ctx.Context, ticks chan Tick, start time.Time, end time.Time, tickInterval time.Duration, th TradingHours) {
+	for t := start; t.Before(end); t = t.Add(tickInterval) {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			ticks <- NewTick(time.Now().Add(time.Duration(i) * tickInterval))
+			if th.isOpenAt(t) {
+				ticks <- NewTick(t)
+			} else {
+				t = th.getNextOpenTime(t)
+			}
 		}
 	}
 }
 
-func GenerateLiveTicks(ctx ctx.Context, ticks chan Tick, runLength int, tickInterval time.Duration) {
-	runDuration := time.Duration(runLength) * tickInterval
-	timeOut := time.After(runDuration)
-	ticker := time.NewTicker(tickInterval)
-	defer ticker.Stop()
-
-	for {
+func GenerateLiveTicks(ctx ctx.Context, ticks chan Tick, start time.Time, end time.Time, tickInterval time.Duration, th TradingHours) {
+	// Wait until start
+	if now := time.Now(); now.Before(start) {
+		timer := time.NewTimer(start.Sub(now))
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return
-		case now := <-ticker.C:
-			ticks <- NewTick(now)
-		case <-timeOut:
-			return
+		case <-timer.C:
 		}
 	}
+
+	for {
+		now := time.Now()
+		if !now.Before(end) {
+			return
+		}
+
+		// Wait until market opens
+		if !th.isOpenAt(now) {
+			nextOpen := th.getNextOpenTime(now)
+			if !nextOpen.Before(end) {
+				return
+			}
+			sleep := time.NewTimer(nextOpen.Sub(now))
+			select {
+			case <-ctx.Done():
+				if !sleep.Stop() {
+					<-sleep.C
+				}
+				return
+			case <-sleep.C:
+			}
+		}
+
+		// Market is open
+		_, closeTime, err := th.GetTradingHours()
+		if err != nil {
+			panic(fmt.Errorf("failed to get trading hours: %w", err))
+		}
+
+		// Min of end and market closure
+		windowEnd := closeTime
+		if end.Before(windowEnd) {
+			windowEnd = end
+		}
+
+		ticker := time.NewTicker(tickInterval)
+		windowTimer := time.NewTimer(time.Until(windowEnd))
+
+		// Inner loop: emit ticks until window closes or context ends
+		windowEnded := false
+		for !windowEnded{
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				if !windowTimer.Stop() {
+					<-windowTimer.C
+				}
+				return
+
+			case <-windowTimer.C:
+				ticker.Stop()
+				windowEnded = true
+
+			case tnow := <-ticker.C:
+				ticks <- NewTick(tnow)
+			}
+		}
+	}
+}
+
+func shiftToWorkingDay(t time.Time) time.Time {
+	if t.Weekday() == time.Saturday {
+		t = t.AddDate(0, 0, 2)
+	}
+	if t.Weekday() == time.Sunday {
+		t = t.AddDate(0, 0, 1)
+	}
+	return t
 }

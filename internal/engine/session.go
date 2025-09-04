@@ -24,8 +24,6 @@ func Run(portfolio *Portfolio, strat st.Strategy, trader *TestTrader, isTest boo
 	ctx, cancel := context.WithCancel(context.Background())
 	cmdChan := make(chan string)
 
-	runLength := int(end.Sub(start).Seconds() / tickInterval.Seconds())
-
 	var tickGen t.TickGenerator
 	if isTest {
 		tickGen = t.GenerateTestTicks
@@ -33,10 +31,19 @@ func Run(portfolio *Portfolio, strat st.Strategy, trader *TestTrader, isTest boo
 		tickGen = t.GenerateLiveTicks
 	}
 
+	tradingHours := t.TradingHours{
+		OpenHour:    OpenHour,
+		OpenMinute:  OpenMinute,
+		CloseHour:   ClosingHour,
+		CloseMinute: ClosingMinute,
+		WeekendsOff: true,
+		ExchangeTZ:  ExchangeTimeZone,
+	}
+
 	// Generate ticks for runner(s)
 	go func() {
 		defer close(ticks)
-		tickGen(ctx, ticks, runLength, tickInterval)
+		tickGen(ctx, ticks, start, end, tickInterval, tradingHours)
 	}()
 
 	// Run runner(s)
