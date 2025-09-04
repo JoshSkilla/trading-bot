@@ -9,6 +9,7 @@ import (
 	t "github.com/joshskilla/trading-bot/internal/types"
 	"github.com/joshskilla/trading-bot/internal/engine"
 	st "github.com/joshskilla/trading-bot/internal/strategy"
+	cfg "github.com/joshskilla/trading-bot/config"
 )
 
 // Create resources (e.g., portfolios, checkpoints)
@@ -72,8 +73,8 @@ func ParseArgsForCheckpoint(id string, args []string) (*st.Checkpoint, error) {
 			// Restricted to one assetType and exchange for now
 			attributes[k] = t.Asset{
 				Symbol:   v,
-				Type:     engine.AssetType,
-				Exchange: engine.Exchange,
+				Type:     cfg.AssetType,
+				Exchange: cfg.Exchange,
 			}
 		}
 		// Convert numeric strings to float64

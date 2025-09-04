@@ -95,3 +95,15 @@ func extractFields(obj any) []string {
 	}
 	return row
 }
+
+func FileExists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false // file does not exist
+	}
+	// Some other error (e.g. permission issue)
+	return false
+}

@@ -8,6 +8,8 @@ import (
 
 	"github.com/joshskilla/trading-bot/internal/engine"
 	st "github.com/joshskilla/trading-bot/internal/strategy"
+	cfg "github.com/joshskilla/trading-bot/config"
+
 	"github.com/urfave/cli/v3"
 )
 
@@ -53,7 +55,7 @@ func RunCmd() *cli.Command {
 
 			// Run the trading session
 			start := time.Now()
-			defaultEnd := start.Add(engine.MaxLiveTradingDuration)
+			defaultEnd := start.Add(cfg.MaxLiveTradingDuration)
 			return engine.Run(portfolio, strat, trader, false, start, defaultEnd)
 		},
 	}

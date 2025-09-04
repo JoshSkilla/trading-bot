@@ -86,9 +86,9 @@ func GenerateLiveTicks(ctx ctx.Context, ticks chan Tick, start time.Time, end ti
 		ticker := time.NewTicker(tickInterval)
 		windowTimer := time.NewTimer(time.Until(windowEnd))
 
-		// Inner loop: emit ticks until window closes or context ends
+		// Generates ticks until window closes or context ends
 		windowEnded := false
-		for !windowEnded{
+		for !windowEnded {
 			select {
 			case <-ctx.Done():
 				ticker.Stop()

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"path/filepath"
 
 	ds "github.com/joshskilla/trading-bot/internal/datastore"
 	t "github.com/joshskilla/trading-bot/internal/types"
+	_ "github.com/joshskilla/trading-bot/config"
 )
 
 const (
@@ -66,11 +68,25 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 
 // Marshal portfolio to JSON and write to data/portfolios/<name>.json
 func (p *Portfolio) SaveToJSON() error {
-	data, err := json.MarshalIndent(p, "", "  ")
+    type out struct {
+        Name     string             `json:"name"`
+        Cash     float64            `json:"cash"`
+        Holdings map[string]float64 `json:"holdings"`
+    }
+	ho := make(map[string]float64, len(p.Positions))
+    for a, v := range p.Positions {
+        ho[a.String()] = v // define Asset.String() to return a stable key (e.g., "NASDAQ:AAPL")
+    }
+	data, err := json.MarshalIndent(out{
+		Name:     p.Name,
+		Cash:     p.Cash,
+		Holdings: ho,
+	}, "", "  ")
 	if err != nil {
 		return err
 	}
-	path := fmt.Sprintf(PortfolioFilePath, p.Name)
+	basePath := os.Getenv("BOT_PATH")
+	path := filepath.Join(basePath, fmt.Sprintf(PortfolioFilePath, p.Name))
 	return os.WriteFile(path, data, 0644)
 }
 

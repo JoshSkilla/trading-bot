@@ -10,6 +10,7 @@ import (
 
 	st "github.com/joshskilla/trading-bot/internal/strategy"
 	t "github.com/joshskilla/trading-bot/internal/types"
+	cfg "github.com/joshskilla/trading-bot/config"
 )
 
 // Runs the trading session
@@ -32,12 +33,12 @@ func Run(portfolio *Portfolio, strat st.Strategy, trader *TestTrader, isTest boo
 	}
 
 	tradingHours := t.TradingHours{
-		OpenHour:    OpenHour,
-		OpenMinute:  OpenMinute,
-		CloseHour:   ClosingHour,
-		CloseMinute: ClosingMinute,
+		OpenHour:    cfg.OpenHour,
+		OpenMinute:  cfg.OpenMinute,
+		CloseHour:   cfg.ClosingHour,
+		CloseMinute: cfg.ClosingMinute,
 		WeekendsOff: true,
-		ExchangeTZ:  ExchangeTimeZone,
+		ExchangeTZ:  cfg.ExchangeTimeZone,
 	}
 
 	// Generate ticks for runner(s)
