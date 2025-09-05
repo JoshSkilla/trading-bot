@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	_ "github.com/joshskilla/trading-bot/config"
@@ -31,8 +30,8 @@ type Portfolio struct {
 	PositionWriter   ds.Writer           `json:"-"`
 }
 type portfolioJSON struct {
-	Name     string             `json:"name"`
-	Cash     float64            `json:"cash"`
+	Name      string             `json:"name"`
+	Cash      float64            `json:"cash"`
 	Positions map[string]float64 `json:"positions"`
 }
 
@@ -73,27 +72,25 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 
 // Marshal portfolio to JSON and write to data/portfolios/<name>.json
 func (p *Portfolio) SaveToJSON() error {
-	ho := make(map[string]float64, len(p.Positions))
+	po := make(map[string]float64, len(p.Positions))
 	for a, v := range p.Positions {
-		ho[a.String()] = v // define Asset.String() to return a stable key (e.g., "NASDAQ:AAPL")
+		po[a.String()] = v // define Asset.String() to return a stable key (e.g., "NASDAQ:AAPL")
 	}
 	data, err := json.MarshalIndent(portfolioJSON{
-		Name:     p.Name,
-		Cash:     p.Cash,
-		Positions: ho,
+		Name:      p.Name,
+		Cash:      p.Cash,
+		Positions: po,
 	}, "", "  ")
 	if err != nil {
 		return err
 	}
-	basePath := os.Getenv("BOT_PATH")
-	path := filepath.Join(basePath, fmt.Sprintf(PortfolioFilePath, p.Name))
+	path := ds.AbsolutePath(fmt.Sprintf(PortfolioFilePath, p.Name))
 	return os.WriteFile(path, data, 0644)
 }
 
 // Load portfolio from data/portfolios/<name>.json
 func LoadPortfolioFromJSON(name string) (*Portfolio, error) {
-	basePath := os.Getenv("BOT_PATH")
-	path := filepath.Join(basePath, fmt.Sprintf(PortfolioFilePath, name))
+	path := ds.AbsolutePath(fmt.Sprintf(PortfolioFilePath, name))
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

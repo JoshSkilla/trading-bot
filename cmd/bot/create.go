@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/urfave/cli/v3"
 	"strconv"
+	"strings"
 
 	t "github.com/joshskilla/trading-bot/internal/types"
 	"github.com/joshskilla/trading-bot/internal/engine"
@@ -69,6 +70,8 @@ func ParseArgsForCheckpoint(id string, args []string) (*st.Checkpoint, error) {
 	}
 	attributes := make(map[string]any)
 	for k, v := range kv {
+
+		// Struct Asset
 		if k == "asset" {
 			// Restricted to one assetType and exchange for now
 			attributes[k] = t.Asset{
@@ -76,13 +79,37 @@ func ParseArgsForCheckpoint(id string, args []string) (*st.Checkpoint, error) {
 				Type:     cfg.AssetType,
 				Exchange: cfg.Exchange,
 			}
+			continue
 		}
-		// Convert numeric strings to float64
+
+		// Boolean
+		val := strings.ToLower(v)
+		if val == "true" {
+			attributes[k] = true
+			continue
+		}
+		if val == "false" {
+			attributes[k] = false
+			continue
+		}
+
+		// Float64 & int
 		if len(v) > 0 && (v[0] >= '0' && v[0] <= '9') {
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
-				attributes[k] = f
+			if strings.Contains(v, ".") { // 5.0 is float
+				if f, err := strconv.ParseFloat(v, 64); err == nil {
+					attributes[k] = f
+					continue
+				}
+			} else { // 5 is int
+				if i, err := strconv.Atoi(v); err == nil {
+					attributes[k] = i
+					continue
+				}
 			}
 		}
+
+		// Fallback: String
+		attributes[k] = v
 	}
 	cp := &st.Checkpoint{
 		ID:         id,
