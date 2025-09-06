@@ -27,6 +27,11 @@ func NewRunner(p *Portfolio, t Trader, s st.Strategy, ch chan t.Tick) *Runner {
 }
 
 func (r *Runner) Run(ctx ctx.Context) {
+	defer func() {
+		r.Trader.Close() // ensure trader resources are cleaned up
+		fmt.Printf("Trader closed for strategy %s on portfolio %s\n", r.Strategy.Name(), r.Portfolio.Name)
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():

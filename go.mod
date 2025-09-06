@@ -6,6 +6,8 @@ require github.com/urfave/cli/v3 v3.4.1
 
 require github.com/joho/godotenv v1.5.1
 
+require github.com/gorilla/websocket v1.5.3
+
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
