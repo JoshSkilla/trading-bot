@@ -11,6 +11,9 @@ type SampleProvider interface {
 	// Will serve from cache if stream enabled and fresh else it'll fall back to REST.
 	FetchSample(ctx context.Context, asset t.Asset) (t.Sample, error)
 
-	// EnableStream (optional) starts a background stream that populates a cache.
-	EnableStream(ctx context.Context, assets []t.Asset) (stop func(), err error)
+	// Lazily start stream and/or extend the WS stream with more assets.
+	AddToStream(ctx context.Context, assets []t.Asset) error
+
+	// Releases stream/resources (idempotent)
+	Close() error                                            
 }

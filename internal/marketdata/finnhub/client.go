@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
 	"github.com/gorilla/websocket"
-	
+
 	md "github.com/joshskilla/trading-bot/internal/marketdata"
 	t "github.com/joshskilla/trading-bot/internal/types"
 )
@@ -22,8 +23,15 @@ type Client struct {
 	Token        string
 	MaxStaleness time.Duration // max age of a valid cached sample
 
-	// internal stream+cache
-	wsConn  *websocket.Conn
+	// internal stream
+	wsMu   sync.Mutex
+	wsConn *websocket.Conn
+	start  sync.Once
+
+	// subscriptions (symbols)
+	subs map[string]struct{}
+
+	// cache
 	cacheMu sync.RWMutex
 	latest  map[string]t.Sample  // by symbol
 	stamp   map[string]time.Time // last update time
@@ -34,6 +42,7 @@ func NewClient(token string) *Client {
 		HTTP:         &http.Client{Timeout: 10 * time.Second},
 		Token:        token,
 		MaxStaleness: 2 * time.Second,
+		subs:         make(map[string]struct{}),
 		latest:       make(map[string]t.Sample),
 		stamp:        make(map[string]time.Time),
 	}
@@ -42,44 +51,87 @@ func NewClient(token string) *Client {
 // If streaming is enabled and cache is valid/fresh, serves from cache
 // Else falls back to REST /quote
 func (c *Client) FetchSample(ctx context.Context, asset t.Asset) (t.Sample, error) {
-	if c.wsConn != nil {
+	// serve from cache if stream is active & fresh
+	if conn := c.getConn(); conn != nil {
 		if sm, ok := c.getCached(asset.Symbol); ok && time.Since(sm.when) <= c.MaxStaleness {
 			return sm.sample, nil
 		}
 	}
+	// fallback to REST
 	return c.fetchSampleREST(ctx, asset)
 }
 
-// EnableStream starts the WS stream which populates the internal cache
-// Call once at startup if you want streaming
-func (c *Client) EnableStream(ctx context.Context, assets []t.Asset) (stop func(), err error) {
-	url := fmt.Sprintf("wss://ws.finnhub.io?token=%s", c.Token)
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		return nil, err
+// AddToStream starts the WS (on the first call) and subscribes any new assets.
+// Safe to call multiple times; re-subs are ignored.
+func (c *Client) AddToStream(ctx context.Context, assets []t.Asset) error {
+	if len(assets) == 0 {
+		return nil
 	}
-	c.wsConn = conn
 
-	// subscribe to assets
+	// ensure connection (lazy start)
+	if err := c.ensureConn(ctx); err != nil {
+		return err
+	}
+
+	// subscribe any new symbols
+	c.wsMu.Lock()
+	defer c.wsMu.Unlock()
+
 	for _, a := range assets {
-		msg := fmt.Sprintf(`{"type":"subscribe","symbol":"%s"}`, a.Symbol)
+		sym := a.Symbol
+		if _, exists := c.subs[sym]; exists {
+			continue
+		}
+		msg := fmt.Sprintf(`{"type":"subscribe","symbol":"%s"}`, sym)
 		if err := c.wsConn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
-			_ = c.wsConn.Close()
-			c.wsConn = nil
-			return nil, err
+			return err
 		}
+		c.subs[sym] = struct{}{}
 	}
+	return nil
+}
 
-	go c.readLoop(ctx)
+// Close stream
+func (c *Client) Close() error {
+	c.wsMu.Lock()
+	defer c.wsMu.Unlock()
+	if c.wsConn != nil {
+		_ = c.wsConn.Close()
+		c.wsConn = nil
+	}
+	return nil
+}
 
-	// Safe to call multiple times, will do nothing if already closed
-	stop = func() {
-		if c.wsConn != nil {
-			_ = c.wsConn.Close()
-			c.wsConn = nil
+func (c *Client) getConn() *websocket.Conn {
+	c.wsMu.Lock()
+	defer c.wsMu.Unlock()
+	return c.wsConn
+}
+
+func (c *Client) ensureConn(ctx context.Context) error {
+	var dialErr error
+	c.start.Do(func() {
+		url := fmt.Sprintf("wss://ws.finnhub.io?token=%s", c.Token)
+		conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+		if err != nil {
+			dialErr = err
+			return
 		}
+		c.wsMu.Lock()
+		c.wsConn = conn
+		c.wsMu.Unlock()
+		go c.readLoop(ctx)
+	})
+	if dialErr != nil {
+		return dialErr
 	}
-	return stop, nil
+	// If start.Do already ran before, make sure conn still exists; if it was closed, re-dial.
+	if c.getConn() == nil {
+		// try to re-establish (simple variant: re-run start)
+		c.start = sync.Once{} // reset the once
+		return c.ensureConn(ctx)
+	}
+	return nil
 }
 
 // --- REST support ---
@@ -110,7 +162,6 @@ func (c *Client) fetchSampleREST(ctx context.Context, asset t.Asset) (t.Sample, 
 	if err := json.NewDecoder(resp.Body).Decode(&qr); err != nil {
 		return t.Sample{}, err
 	}
-
 	return t.NewSample(asset, time.Unix(qr.T, 0), qr.C, 0), nil
 }
 
@@ -130,26 +181,31 @@ func (c *Client) readLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			_ = c.Close()
 			return
 		default:
-			_, msg, err := c.wsConn.ReadMessage()
+			c.wsMu.Lock()
+			conn := c.wsConn
+			c.wsMu.Unlock()
+			if conn == nil {
+				return
+			}
+			_, msg, err := conn.ReadMessage()
 			if err != nil {
-				return // (todo: reconnection/backoff?)
+				_ = c.Close()
+				return // simple: exit (reconnect policy can be added later)
 			}
 			var m wsTradeMsg
-			if err := json.Unmarshal(msg, &m); err != nil {
+			if err := json.Unmarshal(msg, &m); err != nil || m.Type != "trade" {
 				continue
 			}
-			if m.Type != "trade" {
-				continue
-			}
-
 			now := time.Now()
 			for _, d := range m.Data {
 				sm := t.NewSample(
 					t.NewAsset(d.S, "Finnhub", "stock"),
 					time.Unix(0, d.T*int64(time.Millisecond)),
-					d.P, d.V,
+					d.P,
+					d.V,
 				)
 				c.setCached(sm, now)
 			}

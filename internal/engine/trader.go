@@ -15,25 +15,21 @@ import (
 type Trader interface {
 	Execute(*Portfolio, t.Signal) (ExecutionRecord, bool)
 	FetchSample(ctx context.Context, asset t.Asset) (t.Sample, error)
-	Close() // ensure streams/sessions are cleaned up, ensure idempotency
+	Close() error // ensure streams/sessions are cleaned up, ensure idempotency
 }
 
 // ----------- LIVE TRADER -----------
 type LiveTrader struct {
-	Provider    md.SampleProvider
-	closeStream func()
+	Provider md.SampleProvider
 }
 
 func NewLiveTrader(ctx context.Context, assets []t.Asset) *LiveTrader {
-	client := finnhub.NewClient(os.Getenv("FINNHUB_API_KEY"))
-	closeStreamFn, err := client.EnableStream(ctx, assets)
-	if err != nil {
-		fmt.Println("LiveTrader: stream not enabled, using REST only:", err)
+	cl := finnhub.NewClient(os.Getenv("FINNHUB_API_KEY"))
+	// lazily start + add assets
+	if err := cl.AddToStream(ctx, assets); err != nil {
+		fmt.Println("LiveTrader: stream not enabled, REST only:", err)
 	}
-	return &LiveTrader{
-		Provider:    client,
-		closeStream: closeStreamFn,
-	}
+	return &LiveTrader{Provider: cl}
 }
 
 func (lt *LiveTrader) FetchSample(ctx context.Context, asset t.Asset) (t.Sample, error) {
@@ -45,31 +41,22 @@ func (lt *LiveTrader) Execute(p *Portfolio, sig t.Signal) (ExecutionRecord, bool
 	return ExecutionRecord{}, false
 }
 
-func (lt *LiveTrader) Close() {
-	if lt.closeStream != nil {
-		lt.closeStream()
-	}
-}
+func (lt *LiveTrader) Close() error { return lt.Provider.Close() }
 
 // ----------- PAPER TRADER -----------
 type PaperTrader struct {
-	Provider    md.SampleProvider
-	closeStream func()
+	Provider md.SampleProvider
 }
 
 func NewPaperTrader(ctx context.Context, assets []t.Asset) *PaperTrader {
-	client := finnhub.NewClient(os.Getenv("FINNHUB_API_KEY"))
-	closeStreamFn, err := client.EnableStream(ctx, assets)
-	if err != nil {
-		fmt.Println("PaperTrader: stream not enabled, using REST only:", err)
+	cl := finnhub.NewClient(os.Getenv("FINNHUB_API_KEY"))
+	if err := cl.AddToStream(ctx, assets); err != nil {
+		fmt.Println("PaperTrader: stream not enabled, REST only:", err)
 	}
-	return &PaperTrader{
-		Provider:    client,
-		closeStream: closeStreamFn,
-	}
+	return &PaperTrader{Provider: cl}
 }
-func (pt *PaperTrader) FetchSample(ctx context.Context, asset t.Asset) (t.Sample, error) {
-	return pt.Provider.FetchSample(ctx, asset)
+func (pt *PaperTrader) FetchSample(ctx context.Context, a t.Asset) (t.Sample, error) {
+	return pt.Provider.FetchSample(ctx, a)
 }
 
 func (pt *PaperTrader) Execute(p *Portfolio, sig t.Signal) (ExecutionRecord, bool) {
@@ -77,11 +64,7 @@ func (pt *PaperTrader) Execute(p *Portfolio, sig t.Signal) (ExecutionRecord, boo
 	return ExecutionRecord{}, false
 }
 
-func (pt *PaperTrader) Close() {
-	if pt.closeStream != nil {
-		pt.closeStream()
-	}
-}
+func (pt *PaperTrader) Close() error { return pt.Provider.Close() }
 
 // ----------- TEST TRADER -----------
 type TestTrader struct{}
@@ -111,4 +94,4 @@ func (tt *TestTrader) Execute(p *Portfolio, sig t.Signal) (ExecutionRecord, bool
 	return ExecutionRecord{}, false
 }
 
-func (tt *TestTrader) Close() { /* no-op */ }
+func (tt *TestTrader) Close() error { return nil }
