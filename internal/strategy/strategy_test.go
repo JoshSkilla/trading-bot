@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/joshskilla/trading-bot/config"
+	_ "github.com/joshskilla/trading-bot/internal/config"
 	ds "github.com/joshskilla/trading-bot/internal/datastore"
 	"github.com/stretchr/testify/require"
 	types "github.com/joshskilla/trading-bot/internal/types"

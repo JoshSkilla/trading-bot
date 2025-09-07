@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/joshskilla/trading-bot/config"
+	_ "github.com/joshskilla/trading-bot/internal/config"
 	ds "github.com/joshskilla/trading-bot/internal/datastore"
 	t "github.com/joshskilla/trading-bot/internal/types"
 )

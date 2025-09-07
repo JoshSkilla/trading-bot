@@ -7,7 +7,7 @@ import (
 	"time"
 
 	// md "github.com/joshskilla/trading-bot/internal/marketdata"
-	cfg "github.com/joshskilla/trading-bot/config"
+	cfg "github.com/joshskilla/trading-bot/internal/config"
 	"github.com/joshskilla/trading-bot/internal/types"
 )
 

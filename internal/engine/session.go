@@ -10,7 +10,7 @@ import (
 
 	st "github.com/joshskilla/trading-bot/internal/strategy"
 	t "github.com/joshskilla/trading-bot/internal/types"
-	cfg "github.com/joshskilla/trading-bot/config"
+	cfg "github.com/joshskilla/trading-bot/internal/config"
 )
 
 // Runs the trading session

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/joshskilla/trading-bot/config"
+	_ "github.com/joshskilla/trading-bot/internal/config"
 	"github.com/stretchr/testify/require"
 	ds "github.com/joshskilla/trading-bot/internal/datastore"
 	"github.com/joshskilla/trading-bot/internal/types"

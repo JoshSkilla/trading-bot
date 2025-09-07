@@ -8,7 +8,7 @@ import (
 
 	"github.com/joshskilla/trading-bot/internal/engine"
 	st "github.com/joshskilla/trading-bot/internal/strategy"
-	cfg "github.com/joshskilla/trading-bot/config"
+	cfg "github.com/joshskilla/trading-bot/internal/config"
 
 	"github.com/urfave/cli/v3"
 )
