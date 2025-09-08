@@ -51,7 +51,7 @@ func RunCmd() *cli.Command {
 				return fmt.Errorf("failed to restore strategy from checkpoint: %w", err)
 			}
 
-			trader := engine.NewTestTrader() // replace with live trader once functional
+			trader := engine.NewPaperTrader(ctx)
 
 			// Run the trading session
 			start := time.Now()

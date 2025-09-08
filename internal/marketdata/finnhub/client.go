@@ -10,9 +10,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	cfg "github.com/joshskilla/trading-bot/internal/config"
 	md "github.com/joshskilla/trading-bot/internal/marketdata"
 	t "github.com/joshskilla/trading-bot/internal/types"
-	cfg "github.com/joshskilla/trading-bot/internal/config"
 )
 
 // Compile-time check to see if Client implements SampleProvider
@@ -52,11 +52,16 @@ func NewClient(token string) *Client {
 // If streaming is enabled and cache is valid/fresh, serves from cache
 // Else falls back to REST /quote
 func (c *Client) FetchSample(ctx context.Context, asset t.Asset) (t.Sample, error) {
-	// serve from cache if stream is active & fresh
-	if conn := c.getConn(); conn != nil {
-		if sm, ok := c.getCached(asset.Symbol); ok && time.Since(sm.when) <= c.MaxStaleness {
-			return sm.sample, nil
-		}
+	// Ensure the asset is added to the stream if not already there
+	c.wsMu.Lock()
+	_, exists := c.subs[asset.Symbol]
+	c.wsMu.Unlock()
+	if !exists {
+		_ = c.AddToStream(ctx, []t.Asset{asset})
+	}
+	// Serve from cache if fresh
+	if sm, ok := c.getCached(asset.Symbol); ok && time.Since(sm.when) <= c.MaxStaleness {
+		return sm.sample, nil
 	}
 	// fallback to REST
 	return c.fetchSampleREST(ctx, asset)

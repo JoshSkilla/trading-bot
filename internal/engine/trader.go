@@ -24,12 +24,11 @@ type LiveTrader struct {
 	Provider md.SampleProvider
 }
 
+// Ensure LiveTrader implements Trader
+var _ Trader = (*LiveTrader)(nil)
+
 func NewLiveTrader(ctx context.Context, assets []t.Asset) *LiveTrader {
 	cl := finnhub.NewClient(os.Getenv("FINNHUB_API_KEY"))
-	// lazily start + add assets
-	if err := cl.AddToStream(ctx, assets); err != nil {
-		fmt.Println("LiveTrader: stream not enabled, REST only:", err)
-	}
 	return &LiveTrader{Provider: cl}
 }
 
@@ -48,12 +47,11 @@ func (lt *LiveTrader) Close() error { return lt.Provider.Close() }
 type PaperTrader struct {
 	Provider md.SampleProvider
 }
+// Ensure PaperTrader implements Trader
+var _ Trader = (*PaperTrader)(nil)
 
-func NewPaperTrader(ctx context.Context, assets []t.Asset) *PaperTrader {
+func NewPaperTrader(ctx context.Context) *PaperTrader {
 	cl := finnhub.NewClient(os.Getenv("FINNHUB_API_KEY"))
-	if err := cl.AddToStream(ctx, assets); err != nil {
-		fmt.Println("PaperTrader: stream not enabled, REST only:", err)
-	}
 	return &PaperTrader{Provider: cl}
 }
 func (pt *PaperTrader) FetchSample(ctx context.Context, a t.Asset) (t.Sample, error) {
@@ -76,6 +74,9 @@ type TestTrader struct{
 
     cache    map[t.Asset]map[time.Time]t.Bar // asset -> start time -> bar
 }
+
+// Ensure TestTrader implements Trader
+var _ Trader = (*TestTrader)(nil)
 
 func NewTestTrader(interval time.Duration, start, end time.Time) *TestTrader {
 	prov := alpaca.NewClient(os.Getenv("ALPACA_API_KEY"), os.Getenv("ALPACA_API_SECRET"))

@@ -15,7 +15,7 @@ import (
 
 // Runs the trading session
 // Coordinates the runners, tick generators, trader, and live command inputs
-func Run(portfolio *Portfolio, strat st.Strategy, trader *TestTrader, isTest bool, start time.Time, end time.Time) error {
+func Run(portfolio *Portfolio, strat st.Strategy, trader Trader, isTest bool, start time.Time, end time.Time) error {
 
 	ticks := make(chan t.Tick, 10)
 	tickInterval := strat.TickInterval()
