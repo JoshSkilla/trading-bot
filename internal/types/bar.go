@@ -2,6 +2,7 @@ package types
 
 import (
 	"time"
+	"fmt"
 )
 
 // One aggregated period of samples (OHLCV).
@@ -24,6 +25,19 @@ func NewEmptyBar(asset Asset, start, end time.Time) Bar {
 		End:      end,
 		Interval: end.Sub(start),
 	}
+}
+
+// Pretty returns a formatted string representation of the Bar.
+func (b Bar) Pretty() string {
+	const layout = "2006-01-02 15:04:05 MST"
+	return fmt.Sprintf(
+		"%s [%s - %s] (%s)\nOHLC: %.2f %.2f %.2f %.2f  Volume: %.2f",
+		b.Asset.Symbol,
+		b.Start.Format(layout),
+		b.End.Format(layout),
+		b.Interval,
+		b.Open, b.High, b.Low, b.Close, b.Volume,
+	)
 }
 
 func NewBarFromSample(s Sample, start, end time.Time) Bar {

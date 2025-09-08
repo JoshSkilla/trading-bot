@@ -7,6 +7,7 @@ import (
 const (
 	AssetType              = "stock"
 	Exchange               = "IEX"
+	Feed				   = "IEX"
 	ExchangeTimeZone       = "America/New_York"
 	Currency               = "USD"
 	OpenHour               = 9

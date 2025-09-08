@@ -12,6 +12,7 @@ import (
 
 	md "github.com/joshskilla/trading-bot/internal/marketdata"
 	t "github.com/joshskilla/trading-bot/internal/types"
+	cfg "github.com/joshskilla/trading-bot/internal/config"
 )
 
 // Compile-time check to see if Client implements SampleProvider
@@ -202,7 +203,7 @@ func (c *Client) readLoop(ctx context.Context) {
 			now := time.Now()
 			for _, d := range m.Data {
 				sm := t.NewSample(
-					t.NewAsset(d.S, "Finnhub", "stock"),
+					t.NewAsset(d.S, cfg.Exchange, cfg.AssetType),
 					time.Unix(0, d.T*int64(time.Millisecond)),
 					d.P,
 					d.V,
