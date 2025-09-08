@@ -70,50 +70,77 @@ func (pt *PaperTrader) Close() error { return pt.Provider.Close() }
 // ----------- TEST TRADER -----------
 type TestTrader struct{
 	Provider md.BarProvider
-    interval time.Duration
+	interval time.Duration
+	start    time.Time // inclusive, UTC
+	end      time.Time // exclusive, UTC
+
     cache    map[t.Asset]map[time.Time]t.Bar // asset -> start time -> bar
 }
 
-func NewTestTrader(interval time.Duration) *TestTrader {
+func NewTestTrader(interval time.Duration, start, end time.Time) *TestTrader {
 	prov := alpaca.NewClient(os.Getenv("ALPACA_API_KEY"), os.Getenv("ALPACA_API_SECRET"))
 	return &TestTrader{
 		Provider: prov,
 		interval: interval,
+		start:    start.UTC(),
+		end:      end.UTC(),
 		cache:    make(map[t.Asset]map[time.Time]t.Bar),
 	}
 }
 
-// Preload fetches all bars for each asset in [start,end) and caches by aligned UTC start.
-func (tt *TestTrader) Preload(ctx context.Context, assets []t.Asset, start, end time.Time) error {
-	// Normalize boundaries in UTC. Pad end by one interval so last bucket is included.
-	s := AlignUTC(start.UTC(), tt.interval)
-	e := end.UTC().Add(tt.interval)
+// Preload fetches all bars for each asset in [start, end) and caches them.
+func (tt *TestTrader) Preload(ctx context.Context, assets []t.Asset) error {
+	s := AlignUTC(tt.start, tt.interval)
+	e := tt.end.Add(tt.interval) // pad end (end-exclusive guard)
 
 	for _, a := range assets {
-		bars, err := tt.Provider.FetchBars(ctx, a, s, e, tt.interval)
-		if err != nil {
+		if err := tt.preloadAsset(ctx, a, s, e); err != nil {
 			return err
-		}
-		if _, ok := tt.cache[a]; !ok {
-			tt.cache[a] = make(map[time.Time]t.Bar, len(bars))
-		}
-		for _, b := range bars {
-			// assume provider returns b.Start aligned to UTC grid for given interval
-			tt.cache[a][b.Start.UTC()] = b
 		}
 	}
 	return nil
 }
 
-// FetchBarAt returns the bar from cache - requires preloading first.
-func (tt *TestTrader) FetchBarAt(asset t.Asset, ts time.Time) (t.Bar, bool) {
-	key := AlignUTC(ts.UTC(), tt.interval)
-	m, ok := tt.cache[asset]
-	if !ok {
-		return t.Bar{}, false
+func (tt *TestTrader) preloadAsset(ctx context.Context, a t.Asset, s, e time.Time) error {
+	bars, err := tt.Provider.FetchBars(ctx, a, s, e, tt.interval)
+	if err != nil {
+		return err
 	}
-	b, ok := m[key]
-	return b, ok
+	if _, ok := tt.cache[a]; !ok {
+		tt.cache[a] = make(map[time.Time]t.Bar, len(bars))
+	}
+	for _, b := range bars {
+		tt.cache[a][b.Start.UTC()] = b
+	}
+	return nil
+}
+
+// FetchBarAt returns the bar from cache
+// If the asset isn't cached yet, it preloads [start, end) for that asset first.
+func (tt *TestTrader) FetchBarAt(ctx context.Context, asset t.Asset, ts time.Time) (t.Bar, bool, error) {
+	aligned := AlignUTC(ts.UTC(), tt.interval)
+
+	// If we already have this asset cached, fast path
+	if m, ok := tt.cache[asset]; ok {
+		if b, ok := m[aligned]; ok {
+			return b, true, nil
+		}
+		// Asset is cached for full window; missing bucket => no data
+		return t.Bar{}, false, nil
+	}
+
+	// Asset not cached yet: preload full window for this asset
+	s := AlignUTC(tt.start, tt.interval)
+	e := tt.end.Add(tt.interval)
+	if err := tt.preloadAsset(ctx, asset, s, e); err != nil {
+		return t.Bar{}, false, err
+	}
+
+	// Serve after preload
+	if b, ok := tt.cache[asset][aligned]; ok {
+		return b, true, nil
+	}
+	return t.Bar{}, false, nil
 }
 
 // Normalises interval boundaries in UTC

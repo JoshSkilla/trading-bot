@@ -68,8 +68,7 @@ func BacktestCmd() *cli.Command {
 				return fmt.Errorf("failed to restore strategy from checkpoint: %w", err)
 			}
 
-			trader := engine.NewTestTrader()
-
+			trader := engine.NewTestTrader(strat.TickInterval(), start, end)
 			// Run the trading session
 			return engine.Run(portfolio, strat, trader, true, start, end)
 		},
