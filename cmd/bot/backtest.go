@@ -69,6 +69,10 @@ func BacktestCmd() *cli.Command {
 			}
 
 			trader := engine.NewTestTrader(strat.TickInterval(), start, end)
+			if err := trader.IncludeAssets(ctx, portfolio.Assets()); err != nil {
+				return fmt.Errorf("failed to include assets in trader: %w", err)
+			}
+
 			// Run the trading session
 			return engine.Run(portfolio, strat, trader, true, start, end)
 		},

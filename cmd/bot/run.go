@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	cfg "github.com/joshskilla/trading-bot/internal/config"
 	"github.com/joshskilla/trading-bot/internal/engine"
 	st "github.com/joshskilla/trading-bot/internal/strategy"
-	cfg "github.com/joshskilla/trading-bot/internal/config"
 
 	"github.com/urfave/cli/v3"
 )
@@ -51,7 +51,10 @@ func RunCmd() *cli.Command {
 				return fmt.Errorf("failed to restore strategy from checkpoint: %w", err)
 			}
 
-			trader := engine.NewPaperTrader(ctx)
+			trader := engine.NewPaperTrader(ctx, strat.TickInterval())
+			if err := trader.IncludeAssets(ctx, portfolio.Assets()); err != nil {
+				return fmt.Errorf("failed to include assets in trader: %w", err)
+			}
 
 			// Run the trading session
 			start := time.Now()

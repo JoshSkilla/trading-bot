@@ -19,10 +19,10 @@ type Client struct {
 	api *alpacaMD.Client
 
 	barInterval time.Duration
-	start    time.Time // inclusive, UTC
-	end      time.Time // exclusive, UTC
+	start       time.Time // inclusive, UTC
+	end         time.Time // exclusive, UTC
 
-    cache    map[t.Asset]map[time.Time]t.Bar // asset -> start time -> bar
+	cache map[t.Asset]map[time.Time]t.Bar // asset -> start time -> bar
 }
 
 // NewClient builds an Alpaca market data client.
@@ -33,11 +33,11 @@ func NewClient(apiKey, apiSecret string, barInterval time.Duration, start, end t
 		// Feed: alpacaAPI.IEX, // default feed is IEX
 	}
 	return &Client{
-		api:        alpacaMD.NewClient(opts),
+		api:         alpacaMD.NewClient(opts),
 		barInterval: barInterval,
-		start:      start,
-		end:        end,
-		cache:     make(map[t.Asset]map[time.Time]t.Bar),
+		start:       start,
+		end:         end,
+		cache:       make(map[t.Asset]map[time.Time]t.Bar),
 	}
 }
 
