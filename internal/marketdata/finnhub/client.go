@@ -15,7 +15,7 @@ import (
 )
 
 // Compile-time check to see if Client implements SampleProvider
- var _ md.BarProvider = (*Client)(nil)
+var _ md.BarProvider = (*Client)(nil)
 
 // finnhub.Client is a Finnhub adapter
 type Client struct {
@@ -279,20 +279,24 @@ func (c *Client) peekLastClosedBar(symbol string) (t.Bar, bool) {
 // If we have crossed interval boundaries with no trades, it will use
 // zero-volume carry-forward bars up to now, using the last known price.
 // For users of client to ensure correctness.
-func (c *Client) GetLatestBar(ctx context.Context, asset t.Asset, now time.Time) (t.Bar, bool) {
+func (c *Client) GetLatestBar(ctx context.Context, asset t.Asset, now time.Time) (t.Bar, bool, error) {
 	// Ensure the asset is added to the stream if not already there
 	c.wsMu.Lock()
 	_, exists := c.subs[asset.Symbol]
 	c.wsMu.Unlock()
 	if !exists {
-		_ = c.addToStream(ctx, []t.Asset{asset})
+		err := c.addToStream(ctx, []t.Asset{asset})
+		if err != nil {
+			return t.Bar{}, false, err
+		}
 	}
 
 	// Finalise building bar if required
 	_, _ = c.finalizeBuildingIfElapsed(asset, now)
 
-	// Then check for a bar (this only ever returns *closed* bars)
-	return c.ensureBarsUpToNow(asset.Symbol, now)
+	// Ensure bars are up-to-date to for last closed interval
+	bar, ok := c.ensureBarsUpToNow(asset.Symbol, now)
+	return bar, ok, nil
 }
 
 // Will ensure bars are up-to-date to now, filling in missed last close interval if necessary with
@@ -303,13 +307,13 @@ func (c *Client) ensureBarsUpToNow(symbol string, now time.Time) (t.Bar, bool) {
 
 	last, has := c.latestBar[symbol]
 	currStart := t.IntervalStart(now, c.barInterval) // current interval (building bar interval)
-	validLastStart := currStart.Add(-c.barInterval)       // the should be last closed bucket start
-	validLastEnd := currStart                             // last closed bucket end
+	validLastStart := currStart.Add(-c.barInterval)  // the should be last closed bucket start
+	validLastEnd := currStart                        // last closed bucket end
 
 	// If there is a. valid last closed bar return it
-    if has && last.End.Equal(currStart) {
-        return last, true
-    }
+	if has && last.End.Equal(currStart) {
+		return last, true
+	}
 
 	// Get or create sample with last price
 	sm, ok := c.getLatestSample(symbol)
@@ -317,10 +321,10 @@ func (c *Client) ensureBarsUpToNow(symbol string, now time.Time) (t.Bar, bool) {
 		// no bars and no samples
 		return t.Bar{}, false
 	}
-    if !ok && has {
-        // fabricate a 0-volume "sample" using last bar close price
-        sm = t.NewSample(last.Asset, validLastStart, last.Close, 0)
-    }
+	if !ok && has {
+		// fabricate a 0-volume "sample" using last bar close price
+		sm = t.NewSample(last.Asset, validLastStart, last.Close, 0)
+	}
 
 	// Synthesize exactly the *last closed* bar
 	b := t.NewCarryForwardBarFromSample(sm, validLastStart, validLastEnd)
@@ -379,11 +383,12 @@ func (c *Client) setLatestSample(s t.Sample) {
 
 // --- BarProvider interface ---
 
-func (c *Client) IncludeAssets(ctx context.Context, assets []t.Asset) {
-	_ = c.addToStream(ctx, assets)
+func (c *Client) IncludeAssets(ctx context.Context, assets []t.Asset) error {
+	return c.addToStream(ctx, assets)
 }
 
-func (c *Client) FetchBarAt(ctx context.Context, asset t.Asset, now time.Time) (t.Bar, bool) {
+// Should receive now time into now - or at least close to it
+func (c *Client) FetchBarAt(ctx context.Context, asset t.Asset, now time.Time) (t.Bar, bool, error) {
 	return c.GetLatestBar(ctx, asset, now)
 }
 

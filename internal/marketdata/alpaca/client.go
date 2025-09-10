@@ -17,16 +17,54 @@ var _ md.BarProvider = (*Client)(nil)
 
 type Client struct {
 	api *alpacaMD.Client
+
+	barInterval time.Duration
+	start    time.Time // inclusive, UTC
+	end      time.Time // exclusive, UTC
+
+    cache    map[t.Asset]map[time.Time]t.Bar // asset -> start time -> bar
 }
 
 // NewClient builds an Alpaca market data client.
-func NewClient(apiKey, apiSecret string) *Client {
+func NewClient(apiKey, apiSecret string, barInterval time.Duration, start, end time.Time) *Client {
 	opts := alpacaMD.ClientOpts{
 		APIKey:    apiKey,
 		APISecret: apiSecret,
 		// Feed: alpacaAPI.IEX, // default feed is IEX
 	}
-	return &Client{api: alpacaMD.NewClient(opts)}
+	return &Client{
+		api:        alpacaMD.NewClient(opts),
+		barInterval: barInterval,
+		start:      start,
+		end:        end,
+		cache:     make(map[t.Asset]map[time.Time]t.Bar),
+	}
+}
+
+func (c *Client) Preload(ctx context.Context, assets []t.Asset) error {
+	s := t.IntervalStart(c.start, c.barInterval)
+	e := c.end.Add(c.barInterval) // pad end (end-exclusive guard)
+
+	for _, a := range assets {
+		if err := c.preloadAsset(ctx, a, s, e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) preloadAsset(ctx context.Context, a t.Asset, s, e time.Time) error {
+	bars, err := c.FetchBars(ctx, a, s, e, c.barInterval)
+	if err != nil {
+		return err
+	}
+	if _, ok := c.cache[a]; !ok {
+		c.cache[a] = make(map[time.Time]t.Bar, len(bars))
+	}
+	for _, b := range bars {
+		c.cache[a][b.Start.UTC()] = b
+	}
+	return nil
 }
 
 // FetchBars implements BarProvider with explicit start/end and bar interval.
@@ -85,8 +123,6 @@ func (client *Client) FetchBars(
 	return out, nil
 }
 
-func (client *Client) Close() error { return nil }
-
 func timeFrameFromDuration(d time.Duration) (alpacaMD.TimeFrame, error) {
 	switch {
 	case d%time.Minute == 0 && d < time.Hour:
@@ -115,3 +151,37 @@ func StringToFeed(s string) (alpacaMD.Feed, error) {
 		return "", fmt.Errorf("alpaca: unknown feed %q", s)
 	}
 }
+
+// --- BarProvider interface ---
+
+func (c *Client) FetchBarAt(ctx context.Context, asset t.Asset, now time.Time) (t.Bar, bool, error) {
+	aligned := t.IntervalStart(now.UTC(), c.barInterval)
+
+	// If we already have this asset cached, fast path
+	if m, ok := c.cache[asset]; ok {
+		if b, ok := m[aligned]; ok {
+			return b, true, nil
+		}
+		// Asset is cached for full window; missing bucket => no data
+		return t.Bar{}, false, nil
+	}
+
+	// Asset not cached yet: preload full window for this asset
+	s := t.IntervalStart(c.start, c.barInterval)
+	e := c.end.Add(c.barInterval)
+	if err := c.preloadAsset(ctx, asset, s, e); err != nil {
+		return t.Bar{}, false, err
+	}
+
+	// Serve after preload
+	if b, ok := c.cache[asset][aligned]; ok {
+		return b, true, nil
+	}
+	return t.Bar{}, false, nil
+}
+
+func (c *Client) IncludeAssets(ctx context.Context, assets []t.Asset) error {
+	return c.Preload(ctx, assets)
+}
+
+func (client *Client) Close() error { return nil }

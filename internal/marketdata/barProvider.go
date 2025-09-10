@@ -11,9 +11,9 @@ type BarProvider interface {
 	// Fetches historical bars of length duration for the given asset and time range.
 	// FetchBars(ctx context.Context, asset t.Asset, start, end time.Time, duration time.Duration) ([]t.Bar, error)
 
-	FetchBarAt(ctx context.Context, asset t.Asset, ts time.Time) (t.Bar, bool)
+	FetchBarAt(ctx context.Context, asset t.Asset, ts time.Time) (t.Bar, bool, error)
 
-	IncludeAssets(ctx context.Context, assets []t.Asset)
+	IncludeAssets(ctx context.Context, assets []t.Asset) error
 
 	// Releases stream/resources (idempotent)
 	Close() error
