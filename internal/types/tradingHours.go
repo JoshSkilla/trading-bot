@@ -14,7 +14,7 @@ type TradingHours struct {
 	ExchangeTZ  string
 }
 
-func (th *TradingHours) isOpenAt(t time.Time) bool {
+func (th *TradingHours) IsOpenAt(t time.Time) bool {
 	if th.WeekendsOff && (t.Weekday() == time.Saturday || t.Weekday() == time.Sunday) {
 		return false
 	}

@@ -25,7 +25,7 @@ func GenerateTestTicks(ctx ctx.Context, ticks chan Tick, start time.Time, end ti
 		case <-ctx.Done():
 			return
 		default:
-			if th.isOpenAt(t) {
+			if th.IsOpenAt(t) {
 				ticks <- NewTick(t)
 			} else {
 				t = th.getNextOpenTime(t)
@@ -55,7 +55,7 @@ func GenerateLiveTicks(ctx ctx.Context, ticks chan Tick, start time.Time, end ti
 		}
 
 		// Wait until market opens
-		if !th.isOpenAt(now) {
+		if !th.IsOpenAt(now) {
 			nextOpen := th.getNextOpenTime(now)
 			if !nextOpen.Before(end) {
 				return

@@ -26,20 +26,21 @@ func TestAlpaca_FetchBars_Integration(t *testing.T) {
 		t.Skip("ALPACA_API_KEY or ALPACA_API_SECRET not set, skipping integration test")
 	}
 
-	c := NewClient(apiKey, apiSecret)
+	// One trading week: Jan 25–29, 2021 (UTC)
+	// Give ET timezone midnight to midnight but convert to utc
+	// Since time before 00:00 ET snaps to 00:00 ET / 05:00 UTC
+	loc, err := time.LoadLocation("America/New_York")
+	start := time.Date(2021, 1, 25, 0, 0, 0, 0, loc).UTC()
+	end := time.Date(2021, 1, 30, 0, 0, 0, 0, loc).UTC()
+	interval := 24 * time.Hour
+
+	c := NewClient(apiKey, apiSecret, interval, start, end)
 	defer c.Close()
 
 	ctx := context.Background()
 	reqAsset := types.NewAsset("GME", cfg.Exchange, cfg.AssetType)
 
-	// One trading week: Jan 25–29, 2021 (UTC)
-	// Give ET timezone midnight to midnight but convert to utc
-	// Since time before 00:00 ET snaps to 00:00 ET / 05:00 UTC
-	loc, err := time.LoadLocation("America/New_York")
 	require.NoError(t, err)
-	start := time.Date(2021, 1, 25, 0, 0, 0, 0, loc).UTC()
-	end   := time.Date(2021, 1, 30, 0, 0, 0, 0, loc).UTC()
-	interval := 24 * time.Hour
 
 	bars, err := c.FetchBars(ctx, reqAsset, start, end, interval)
 	require.NoError(t, err)

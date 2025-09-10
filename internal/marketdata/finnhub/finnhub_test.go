@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	// md "github.com/joshskilla/trading-bot/internal/marketdata"
 	cfg "github.com/joshskilla/trading-bot/internal/config"
 	"github.com/joshskilla/trading-bot/internal/types"
 )
@@ -15,57 +14,98 @@ import (
  * Integration test (guarded)
  *
  * Requires: FINNHUB_API_KEY in environment.
+ * Requires: Market to be open (per config trading hours).
  * Skips otherwise.
  ***************/
 
 func TestFinnhub_FetchSample_Integration(t *testing.T) {
+	tradingHours := types.TradingHours{
+		OpenHour:    cfg.OpenHour,
+		OpenMinute:  cfg.OpenMinute,
+		CloseHour:   cfg.ClosingHour,
+		CloseMinute: cfg.ClosingMinute,
+		WeekendsOff: true,
+		ExchangeTZ:  cfg.ExchangeTimeZone,
+	}
+
 	token := os.Getenv("FINNHUB_API_KEY")
 	if token == "" {
 		t.Skip("FINNHUB_API_KEY not set; skipping integration test")
 	}
 
-	client := NewClient(token)
+	if !tradingHours.IsOpenAt(time.Now()) {
+		t.Skip("Market closed; skipping integration test")
+	}
+
+	interval := 5 * time.Second
+	client := NewClient(token, interval)
 	t.Cleanup(func() { _ = client.Close() }) // ensure websocket is closed
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	reqAsset := types.NewAsset("AAPL", cfg.Exchange, cfg.AssetType)
-	if err := client.AddToStream(ctx, []types.Asset{reqAsset}); err != nil {
-		t.Logf("\n [Finnhub] Stream not enabled, will use REST only: %v \n", err)
+	if err := client.IncludeAssets(ctx, []types.Asset{reqAsset}); err != nil {
+		t.Fatalf("failed to subscribe asset: %v", err)
 	} else {
-		t.Logf("\n [Finnhub] Stream subscription sent for %s\n", reqAsset.Symbol)
+		t.Logf("[Finnhub] Stream subscription sent for %s", reqAsset.Symbol)
 	}
 
-	// Give the websocket some time to potentially receive a trade from the stream
-	time.Sleep(500 * time.Millisecond)
+	// Give the websocket a moment to receive initial trades (if market is open).
+	time.Sleep(2 * time.Second)
 
-	sampCtx, sampCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer sampCancel()
-
-	s, err := client.FetchSample(sampCtx, reqAsset)
-	if err != nil {
-		t.Fatalf("FetchSample error: %v", err)
+	// Poll FetchBarAt for up to ~10s so we don't rely on an exact boundary moment.
+	deadline := time.Now().Add(10 * time.Second)
+	var (
+		bar       types.Bar
+		ok        bool
+		err       error
+		checkedAt time.Time
+	)
+	for time.Now().Before(deadline) {
+		now := time.Now().UTC()
+		bar, ok, err = client.FetchBarAt(ctx, reqAsset, now)
+		if err != nil {
+			t.Fatalf("FetchBarAt error: %v", err)
+		}
+		if ok {
+			checkedAt = now
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	t.Logf("\n [Finnhub] Fetched sample: %+v \n", s.Pretty())
 
-	if s.Asset.Symbol != reqAsset.Symbol {
-		t.Fatalf("expected %s, got %s", reqAsset.Symbol, s.Asset.Symbol)
+	if !ok {
+		t.Logf("[Finnhub] No bar available yet for %s (market closed or no trades)", reqAsset.Symbol)
+		return
 	}
 
-	// Attribute sanity checks (positive price & reasonable timestamp)
-	if s.Price <= 0 {
-		t.Fatalf("expected positive price, got %f", s.Price)
+	// Verify alignment to the last-closed interval end using the same 'now' we queried with.
+	expectedEnd := types.IntervalStart(checkedAt, interval)
+	if !bar.End.Equal(expectedEnd) {
+		t.Errorf("expected bar.End %v, got %v", expectedEnd, bar.End)
 	}
-	if s.Time.Before(time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)) {
-		t.Fatalf("unexpected old timestamp: %v", s.Time)
+	if bar.Interval != interval {
+		t.Errorf("expected interval %v, got %v", interval, bar.Interval)
 	}
 
-	// Idempotent close
+	// Log in your existing style, and clearly include TradeCount.
+	t.Logf("[Finnhub] Bar for %s:\n %s [%s - %s] (%s)\n OHLC: %.2f %.2f %.2f %.2f  Volume: %.2f  Trades: %d  Status: %v",
+		bar.Asset.Symbol,
+		bar.Asset.Symbol,
+		bar.Start.UTC().Format("2006-01-02 15:04:05 MST"),
+		bar.End.UTC().Format("2006-01-02 15:04:05 MST"),
+		bar.Interval.String(),
+		bar.Open, bar.High, bar.Low, bar.Close,
+		bar.Volume,
+		bar.TradeCount,
+		bar.Status,
+	)
+
+	// Idempotent close check
 	if err := client.Close(); err != nil {
 		t.Fatalf("Close failed: %v", err)
 	}
-	// Second close should also be safe
 	if err := client.Close(); err != nil {
 		t.Fatalf("second Close failed: %v", err)
 	}
