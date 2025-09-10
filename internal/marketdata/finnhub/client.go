@@ -10,12 +10,12 @@ import (
 	"github.com/gorilla/websocket"
 
 	cfg "github.com/joshskilla/trading-bot/internal/config"
-	// md "github.com/joshskilla/trading-bot/internal/marketdata"
+	md "github.com/joshskilla/trading-bot/internal/marketdata"
 	t "github.com/joshskilla/trading-bot/internal/types"
 )
 
 // Compile-time check to see if Client implements SampleProvider
-// var _ md.SampleProvider = (*Client)(nil)
+ var _ md.BarProvider = (*Client)(nil)
 
 // finnhub.Client is a Finnhub adapter
 type Client struct {
@@ -61,7 +61,7 @@ func NewClient(token string, interval time.Duration) *Client {
 
 func NewClientWithAssets(ctx context.Context, token string, interval time.Duration, assets []t.Asset) (*Client, error) {
 	cl := NewClient(token, interval)
-	if err := cl.AddToStream(ctx, assets); err != nil {
+	if err := cl.addToStream(ctx, assets); err != nil {
 		return nil, err
 	}
 	return cl, nil
@@ -69,7 +69,7 @@ func NewClientWithAssets(ctx context.Context, token string, interval time.Durati
 
 // AddToStream starts the WS (on the first call) and subscribes any new assets.
 // Safe to call multiple times; re-subs are ignored.
-func (c *Client) AddToStream(ctx context.Context, assets []t.Asset) error {
+func (c *Client) addToStream(ctx context.Context, assets []t.Asset) error {
 	if len(assets) == 0 {
 		return nil
 	}
@@ -279,16 +279,14 @@ func (c *Client) peekLastClosedBar(symbol string) (t.Bar, bool) {
 // If we have crossed interval boundaries with no trades, it will use
 // zero-volume carry-forward bars up to now, using the last known price.
 // For users of client to ensure correctness.
-func (c *Client) GetLatestBar(ctx context.Context, asset t.Asset) (t.Bar, bool) {
+func (c *Client) GetLatestBar(ctx context.Context, asset t.Asset, now time.Time) (t.Bar, bool) {
 	// Ensure the asset is added to the stream if not already there
 	c.wsMu.Lock()
 	_, exists := c.subs[asset.Symbol]
 	c.wsMu.Unlock()
 	if !exists {
-		_ = c.AddToStream(ctx, []t.Asset{asset})
+		_ = c.addToStream(ctx, []t.Asset{asset})
 	}
-
-	now := time.Now().UTC()
 
 	// Finalise building bar if required
 	_, _ = c.finalizeBuildingIfElapsed(asset, now)
@@ -378,3 +376,15 @@ func (c *Client) setLatestSample(s t.Sample) {
 	c.latestSample[s.Asset.Symbol] = s
 	c.sampleMu.Unlock()
 }
+
+// --- BarProvider interface ---
+
+func (c *Client) IncludeAssets(ctx context.Context, assets []t.Asset) {
+	_ = c.addToStream(ctx, assets)
+}
+
+func (c *Client) FetchBarAt(ctx context.Context, asset t.Asset, now time.Time) (t.Bar, bool) {
+	return c.GetLatestBar(ctx, asset, now)
+}
+
+// Close already implemented above
