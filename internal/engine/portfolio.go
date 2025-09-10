@@ -70,6 +70,14 @@ func NewPortfolio(name string, cash float64) *Portfolio {
 	}
 }
 
+func (p *Portfolio) Assets() []t.Asset {
+	assets := make([]t.Asset, 0, len(p.Positions))
+	for a := range p.Positions {
+		assets = append(assets, a)
+	}
+	return assets
+}
+
 // Marshal portfolio to JSON and write to data/portfolios/<name>.json
 func (p *Portfolio) SaveToJSON() error {
 	po := make(map[string]float64, len(p.Positions))

@@ -4,67 +4,67 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 
 	cfg "github.com/joshskilla/trading-bot/internal/config"
-	md "github.com/joshskilla/trading-bot/internal/marketdata"
+	// md "github.com/joshskilla/trading-bot/internal/marketdata"
 	t "github.com/joshskilla/trading-bot/internal/types"
 )
 
 // Compile-time check to see if Client implements SampleProvider
-var _ md.SampleProvider = (*Client)(nil)
+// var _ md.SampleProvider = (*Client)(nil)
 
 // finnhub.Client is a Finnhub adapter
 type Client struct {
-	HTTP         *http.Client
-	Token        string
-	MaxStaleness time.Duration // max age of a valid cached sample
+	Token string
 
-	// internal stream
+	// WS internals (the stream)
 	wsMu   sync.Mutex
 	wsConn *websocket.Conn
 	start  sync.Once
 
-	// subscriptions (symbols)
+	// Subscriptions (symbols)
 	subs map[string]struct{}
 
-	// cache
-	cacheMu sync.RWMutex
-	latest  map[string]t.Sample  // by symbol
-	stamp   map[string]time.Time // last update time
+	// Latest CLOSED bar per symbol
+	barMu       sync.RWMutex
+	latestBar   map[string]t.Bar // by symbol
+	barInterval time.Duration
+
+	// Bar aggregation
+	agg   *t.Aggregator // use with mutex
+	aggMu sync.Mutex    // readloop + getLatestBar sync
+
+	// Latest sample
+	sampleMu     sync.RWMutex
+	latestSample map[string]t.Sample // by symbol
+
+	// Dont hold locks together but if needed, aggMu then barMu then sampleMu
 }
 
-func NewClient(token string) *Client {
+func NewClient(token string, interval time.Duration) *Client {
+	if interval <= 0 {
+		interval = time.Minute
+	}
 	return &Client{
-		HTTP:         &http.Client{Timeout: 10 * time.Second},
 		Token:        token,
-		MaxStaleness: 2 * time.Second,
 		subs:         make(map[string]struct{}),
-		latest:       make(map[string]t.Sample),
-		stamp:        make(map[string]time.Time),
+		latestSample: make(map[string]t.Sample),
+		barInterval:  interval,
+		agg:          t.NewAggregator(interval),
+		latestBar:    make(map[string]t.Bar),
 	}
 }
 
-// If streaming is enabled and cache is valid/fresh, serves from cache
-// Else falls back to REST /quote
-func (c *Client) FetchSample(ctx context.Context, asset t.Asset) (t.Sample, error) {
-	// Ensure the asset is added to the stream if not already there
-	c.wsMu.Lock()
-	_, exists := c.subs[asset.Symbol]
-	c.wsMu.Unlock()
-	if !exists {
-		_ = c.AddToStream(ctx, []t.Asset{asset})
+func NewClientWithAssets(ctx context.Context, token string, interval time.Duration, assets []t.Asset) (*Client, error) {
+	cl := NewClient(token, interval)
+	if err := cl.AddToStream(ctx, assets); err != nil {
+		return nil, err
 	}
-	// Serve from cache if fresh
-	if sm, ok := c.getCached(asset.Symbol); ok && time.Since(sm.when) <= c.MaxStaleness {
-		return sm.sample, nil
-	}
-	// fallback to REST
-	return c.fetchSampleREST(ctx, asset)
+	return cl, nil
 }
 
 // AddToStream starts the WS (on the first call) and subscribes any new assets.
@@ -97,7 +97,7 @@ func (c *Client) AddToStream(ctx context.Context, assets []t.Asset) error {
 	return nil
 }
 
-// Close stream
+// Close stream (WS connection)
 func (c *Client) Close() error {
 	c.wsMu.Lock()
 	defer c.wsMu.Unlock()
@@ -114,6 +114,7 @@ func (c *Client) getConn() *websocket.Conn {
 	return c.wsConn
 }
 
+// ensureConn connects the WS if not already connected.
 func (c *Client) ensureConn(ctx context.Context) error {
 	var dialErr error
 	c.start.Do(func() {
@@ -133,42 +134,10 @@ func (c *Client) ensureConn(ctx context.Context) error {
 	}
 	// If start.Do already ran before, make sure conn still exists; if it was closed, re-dial.
 	if c.getConn() == nil {
-		// try to re-establish (simple variant: re-run start)
-		c.start = sync.Once{} // reset the once
+		c.start = sync.Once{} // reset so conn can be restarted
 		return c.ensureConn(ctx)
 	}
 	return nil
-}
-
-// --- REST support ---
-
-type quoteResp struct {
-	C float64 `json:"c"` // current/last price
-	T int64   `json:"t"` // unix seconds
-}
-
-func (c *Client) fetchSampleREST(ctx context.Context, asset t.Asset) (t.Sample, error) {
-	url := fmt.Sprintf("https://finnhub.io/api/v1/quote?symbol=%s&token=%s", asset.Symbol, c.Token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return t.Sample{}, err
-	}
-
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return t.Sample{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return t.Sample{}, fmt.Errorf("finnhub: http %d", resp.StatusCode)
-	}
-
-	var qr quoteResp
-	if err := json.NewDecoder(resp.Body).Decode(&qr); err != nil {
-		return t.Sample{}, err
-	}
-	return t.NewSample(asset, time.Unix(qr.T, 0), qr.C, 0), nil
 }
 
 // --- WS stream support ---
@@ -183,6 +152,9 @@ type wsTradeMsg struct {
 	} `json:"data"`
 }
 
+// goroutine: read messages, parse, and update latest sample & bars
+// Usually uses trades to update the building bar in aggregator,
+// but can also patch the last closed bar if a late trade arrives.
 func (c *Client) readLoop(ctx context.Context) {
 	for {
 		select {
@@ -205,40 +177,204 @@ func (c *Client) readLoop(ctx context.Context) {
 			if err := json.Unmarshal(msg, &m); err != nil || m.Type != "trade" {
 				continue
 			}
-			now := time.Now()
 			for _, d := range m.Data {
-				sm := t.NewSample(
-					t.NewAsset(d.S, cfg.Exchange, cfg.AssetType),
-					time.Unix(0, d.T*int64(time.Millisecond)),
-					d.P,
-					d.V,
-				)
-				c.setCached(sm, now)
+				asset := t.NewAsset(d.S, cfg.Exchange, cfg.AssetType)
+				ts := time.Unix(0, d.T*int64(time.Millisecond))
+
+				// Update latest trade
+				c.setLatestSample(t.NewSample(asset, ts, d.P, d.V))
+
+				// Updates latestBar or new bar being built
+				c.applyTradeToBar(asset, ts, d.P, d.V)
 			}
 		}
 	}
 }
 
-// --- Cache helpers ---
+// applyTradeToBar routes a trade to the correct place under locks:
+// - if same interval as current building bar → update building bar
+// - if late for the latest closed bar → patch last closed (latest) bar
+// - if late for interval before last closed bar → ignore (too old)
+// - if future (ie next) interval → let aggregator roll & close, then start new bar
+func (c *Client) applyTradeToBar(asset t.Asset, ts time.Time, price, size float64) {
+	tradeIntervalStart := t.IntervalStart(ts, c.barInterval)
 
-type cached struct {
-	sample t.Sample
-	when   time.Time
-}
+	// Guard current building state with aggMu
+	c.aggMu.Lock()
+	buildingBar, hasBB := c.agg.Curr[asset]
 
-func (c *Client) getCached(symbol string) (cached, bool) {
-	c.cacheMu.RLock()
-	defer c.cacheMu.RUnlock()
-	s, ok := c.latest[symbol]
-	if !ok {
-		return cached{}, false
+	if hasBB {
+		switch {
+		case tradeIntervalStart.Equal(buildingBar.Start):
+			// Same Interval as Building Bar: update it
+			buildingBar.UpdateWithTrade(ts, price, size)
+			c.agg.Curr[asset] = buildingBar
+			c.aggMu.Unlock()
+			return
+
+		case tradeIntervalStart.Before(buildingBar.Start):
+			// Earlier Interval than BB: update Last closed bar if possible
+			c.aggMu.Unlock()
+			_ = c.patchLastClosedBar(asset, ts, price, size)
+			return
+
+		default:
+			// Future (next) interval: let aggregator close BB & start new bar
+			closed := c.agg.PushTrade(asset, ts, price, size)
+			c.aggMu.Unlock()
+			if closed != nil {
+				closed.Status = t.BarStatusAggregated
+				c.setLatestBar(*closed)
+			}
+			return
+		}
 	}
-	return cached{sample: s, when: c.stamp[symbol]}, true
+
+	// No building bar exists — can only update last closed bar or start new bar
+	c.aggMu.Unlock()
+
+	last, ok := c.peekLastClosedBar(asset.Symbol)
+	switch {
+	case ok && tradeIntervalStart.Before(last.Start):
+		// Earlier than last closed bar: ignore
+		return
+	case ok && tradeIntervalStart.Before(last.End):
+		// Same interval as last closed bar: patch it
+		_ = c.patchLastClosedBar(asset, ts, price, size)
+		return
+	default:
+		// After last closed bar or no closed bar yet: start/continue via aggregator
+		// GetLatest may have lazily deleted building bar or first trade for asset
+		// Will create new building bar or continue existing one
+		c.aggMu.Lock()
+		closed := c.agg.PushTrade(asset, ts, price, size)
+		c.aggMu.Unlock()
+		if closed != nil {
+			closed.Status = t.BarStatusAggregated
+			c.setLatestBar(*closed)
+		}
+		return
+	}
 }
 
-func (c *Client) setCached(s t.Sample, now time.Time) {
-	c.cacheMu.Lock()
-	c.latest[s.Asset.Symbol] = s
-	c.stamp[s.Asset.Symbol] = now
-	c.cacheMu.Unlock()
+// --- Latest CLOSED bar ---
+
+// Set the latest closed bar for a symbol
+func (c *Client) setLatestBar(b t.Bar) {
+	c.barMu.Lock()
+	c.latestBar[b.Asset.Symbol] = b
+	c.barMu.Unlock()
+}
+
+// Peek at the latest closed bar for a symbol
+// For client internal use only
+func (c *Client) peekLastClosedBar(symbol string) (t.Bar, bool) {
+	c.barMu.RLock()
+	b, ok := c.latestBar[symbol]
+	c.barMu.RUnlock()
+	return b, ok
+}
+
+// GetLatestBar returns the most recent closed bar for a symbol.
+// If we have crossed interval boundaries with no trades, it will use
+// zero-volume carry-forward bars up to now, using the last known price.
+// For users of client to ensure correctness.
+func (c *Client) GetLatestBar(ctx context.Context, asset t.Asset) (t.Bar, bool) {
+	// Ensure the asset is added to the stream if not already there
+	c.wsMu.Lock()
+	_, exists := c.subs[asset.Symbol]
+	c.wsMu.Unlock()
+	if !exists {
+		_ = c.AddToStream(ctx, []t.Asset{asset})
+	}
+
+	now := time.Now().UTC()
+
+	// Finalise building bar if required
+	_, _ = c.finalizeBuildingIfElapsed(asset, now)
+
+	// Then check for a bar (this only ever returns *closed* bars)
+	return c.ensureBarsUpToNow(asset.Symbol, now)
+}
+
+// Will ensure bars are up-to-date to now, filling in missed last close interval if necessary with
+// a zero-volume carry-forward bar.
+func (c *Client) ensureBarsUpToNow(symbol string, now time.Time) (t.Bar, bool) {
+	c.barMu.Lock()
+	defer c.barMu.Unlock()
+
+	last, has := c.latestBar[symbol]
+	currStart := t.IntervalStart(now, c.barInterval) // current interval (building bar interval)
+	validLastStart := currStart.Add(-c.barInterval)       // the should be last closed bucket start
+	validLastEnd := currStart                             // last closed bucket end
+
+	// If there is a. valid last closed bar return it
+    if has && last.End.Equal(currStart) {
+        return last, true
+    }
+
+	// Get or create sample with last price
+	sm, ok := c.getLatestSample(symbol)
+	if !ok && !has {
+		// no bars and no samples
+		return t.Bar{}, false
+	}
+    if !ok && has {
+        // fabricate a 0-volume "sample" using last bar close price
+        sm = t.NewSample(last.Asset, validLastStart, last.Close, 0)
+    }
+
+	// Synthesize exactly the *last closed* bar
+	b := t.NewCarryForwardBarFromSample(sm, validLastStart, validLastEnd)
+	c.latestBar[symbol] = b
+	return b, true
+}
+
+// Close, set & return the current building bar its interval has completed
+func (c *Client) finalizeBuildingIfElapsed(asset t.Asset, now time.Time) (t.Bar, bool) {
+	c.aggMu.Lock()
+	b, ok := c.agg.Curr[asset]
+	if !ok || now.Before(b.End) {
+		// Building bar is incomplete - still within interval
+		c.aggMu.Unlock()
+		return t.Bar{}, false
+	}
+	// Building bar should be complete - close it
+	b.Status = t.BarStatusAggregated
+	delete(c.agg.Curr, asset) // interval flipped
+	c.aggMu.Unlock()
+
+	c.setLatestBar(b)
+	return b, true
+}
+
+// patchLastClosedBar updates the latest closed bar if ts is in its [Start, End) interval.
+func (c *Client) patchLastClosedBar(asset t.Asset, ts time.Time, price, size float64) bool {
+	sym := asset.Symbol
+	c.barMu.Lock()
+	b, ok := c.latestBar[sym]
+	if !ok || !b.InRange(ts) {
+		c.barMu.Unlock()
+		return false
+	}
+	// Use the helper to update OHLCV/Notional/TradeCount
+	b.UpdateWithTrade(ts, price, size)
+	c.latestBar[sym] = b
+	c.barMu.Unlock()
+	return true
+}
+
+// --- Latest sample ---
+
+func (c *Client) getLatestSample(symbol string) (t.Sample, bool) {
+	c.sampleMu.RLock()
+	defer c.sampleMu.RUnlock()
+	sm, ok := c.latestSample[symbol]
+	return sm, ok
+}
+
+func (c *Client) setLatestSample(s t.Sample) {
+	c.sampleMu.Lock()
+	c.latestSample[s.Asset.Symbol] = s
+	c.sampleMu.Unlock()
 }

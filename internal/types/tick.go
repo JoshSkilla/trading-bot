@@ -117,3 +117,9 @@ func shiftToWorkingDay(t time.Time) time.Time {
 	}
 	return t
 }
+
+func IntervalStart(ts time.Time, d time.Duration) time.Time {
+	ts = ts.UTC()
+	sec := int64(d.Seconds())
+	return time.Unix((ts.Unix()/sec)*sec, 0).UTC()
+}
