@@ -127,7 +127,7 @@ func (b Bar) InRange(ts time.Time) bool {
 
 // Pretty returns a formatted string representation of the Bar.
 func (b Bar) Pretty() string {
-	const layout = "2006-01-02 15:04:05 MST"
+	const layout = "2006-01-02 15:04:05 UTC"
 	return fmt.Sprintf(
 		"%s [%s - %s] (%s)\nOHLC: %.2f %.2f %.2f %.2f  Volume: %.2f",
 		b.Asset.Symbol,

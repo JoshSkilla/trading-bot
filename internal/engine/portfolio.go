@@ -125,7 +125,7 @@ func (p *Portfolio) FlushOrdersToFile() error {
 }
 
 func (p *Portfolio) FlushPositionsToFile() error {
-	now := time.Now()
+	now := time.Now().UTC()
 	for asset, qty := range p.Positions {
 		price := 0.0 // TODO: send requests for price
 		record := PositionRecord{

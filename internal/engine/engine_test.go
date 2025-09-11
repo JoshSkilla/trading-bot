@@ -7,9 +7,9 @@ import (
 	"time"
 
 	_ "github.com/joshskilla/trading-bot/internal/config"
-	"github.com/stretchr/testify/require"
 	ds "github.com/joshskilla/trading-bot/internal/datastore"
 	"github.com/joshskilla/trading-bot/internal/types"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSaveEmptyPortfolio(t *testing.T) {
@@ -81,7 +81,7 @@ func TestFlushingOrdersFromPortfolio(t *testing.T) {
 
 	// Record some orders
 	portfolio.ExecutionHistory = append(portfolio.ExecutionHistory, ExecutionRecord{
-		Time:   time.Now(),
+		Time:   time.Now().UTC(),
 		Asset:  types.NewAsset("AAPL", "NASDAQ", "stock"),
 		Action: types.Buy,
 		Qty:    1,
@@ -89,7 +89,7 @@ func TestFlushingOrdersFromPortfolio(t *testing.T) {
 		Cash:   850,
 	})
 	portfolio.ExecutionHistory = append(portfolio.ExecutionHistory, ExecutionRecord{
-		Time:   time.Now(),
+		Time:   time.Now().UTC(),
 		Asset:  types.NewAsset("GOOGL", "NASDAQ", "stock"),
 		Action: types.Buy,
 		Qty:    1,

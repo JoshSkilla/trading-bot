@@ -49,7 +49,7 @@ func GenerateLiveTicks(ctx ctx.Context, ticks chan Tick, start time.Time, end ti
 	}
 
 	for {
-		now := time.Now()
+		now := time.Now().UTC()
 		if !now.Before(end) {
 			return
 		}

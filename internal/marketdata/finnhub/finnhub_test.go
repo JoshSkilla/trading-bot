@@ -33,7 +33,7 @@ func TestFinnhub_FetchSample_Integration(t *testing.T) {
 		t.Skip("FINNHUB_API_KEY not set; skipping integration test")
 	}
 
-	if !tradingHours.IsOpenAt(time.Now()) {
+	if !tradingHours.IsOpenAt(time.Now().UTC()) {
 		t.Skip("Market closed; skipping integration test")
 	}
 
@@ -93,8 +93,8 @@ func TestFinnhub_FetchSample_Integration(t *testing.T) {
 	t.Logf("[Finnhub] Bar for %s:\n %s [%s - %s] (%s)\n OHLC: %.2f %.2f %.2f %.2f  Volume: %.2f  Trades: %d  Status: %v",
 		bar.Asset.Symbol,
 		bar.Asset.Symbol,
-		bar.Start.UTC().Format("2006-01-02 15:04:05 MST"),
-		bar.End.UTC().Format("2006-01-02 15:04:05 MST"),
+		bar.Start.UTC().Format("2006-01-02 15:04:05 UTC"),
+		bar.End.UTC().Format("2006-01-02 15:04:05 UTC"),
 		bar.Interval.String(),
 		bar.Open, bar.High, bar.Low, bar.Close,
 		bar.Volume,

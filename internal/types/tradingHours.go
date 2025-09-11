@@ -1,8 +1,8 @@
 package types
 
 import (
-	"time"
 	"fmt"
+	"time"
 )
 
 type TradingHours struct {
@@ -30,9 +30,9 @@ func (th *TradingHours) GetTradingHours() (time.Time, time.Time, error) {
 	if err != nil {
 		return time.Time{}, time.Time{}, fmt.Errorf("failed to load timezone: %w", err)
 	}
-	now := time.Now()
-	closingTime := time.Date(now.Year(), now.Month(), now.Day(), th.CloseHour, th.CloseMinute, 0, 0, loc).In(now.Location())
-	openingTime := time.Date(now.Year(), now.Month(), now.Day(), th.OpenHour, th.OpenMinute, 0, 0, loc).In(now.Location())
+	now := time.Now().UTC()
+	closingTime := time.Date(now.Year(), now.Month(), now.Day(), th.CloseHour, th.CloseMinute, 0, 0, loc).UTC()
+	openingTime := time.Date(now.Year(), now.Month(), now.Day(), th.OpenHour, th.OpenMinute, 0, 0, loc).UTC()
 	return openingTime, closingTime, nil
 }
 

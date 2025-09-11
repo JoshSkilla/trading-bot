@@ -3,8 +3,9 @@ package strategy
 import (
 	"time"
 
-	t "github.com/joshskilla/trading-bot/internal/types"
 	"fmt"
+
+	t "github.com/joshskilla/trading-bot/internal/types"
 )
 
 type MomentumStrategy struct {
@@ -62,7 +63,7 @@ func (m *MomentumStrategy) GenerateSignals() []t.Signal {
 	// placeholder
 	return []t.Signal{
 		{
-			Time:       time.Now(),
+			Time:       time.Now().UTC(),
 			Bar:        m.bar,
 			Action:     t.Buy,
 			Confidence: 0.9,
